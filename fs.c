@@ -21,11 +21,18 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "disk.h"
 #include "util.h"
+#include "fs.h"
 
-int fs_devread(part_descr_t part_info, int sector, int byte_offset, int byte_len, char *buf)
+struct filesys_descr {
+	struct filesys_operations *fs_ops;
+	struct filesys_spec       *fs_data;
+};
+
+int vfs_devread(part_descr_t part_info, int sector, int byte_offset, int byte_len, char *buf)
 {
 	unsigned block_len;
 	unsigned char sec_buf[SECTOR_SIZE];
@@ -93,5 +100,45 @@ int fs_devread(part_descr_t part_info, int sector, int byte_offset, int byte_len
 		memcpy(buf, sec_buf, byte_len);
 	}
 	return 1;
+}
+
+extern struct filesys_operations extfs_operations;
+static struct filesys_operations * allfs[] = {
+	&extfs_operations,
+	NULL,
+};
+
+filesys_t vfs_mount(part_descr_t part)
+{
+	struct filesys_operations *fop;
+	struct filesys_spec *fs;
+	filesys_t fsys;
+	int x = 0;
+
+	while (allfs[x]) {
+		fop = allfs[x];
+		if ((fs = fop->mount(part)) != NULL) {
+			fsys = calloc(1, sizeof *fsys);
+			fsys->fs_ops = fop;
+			fsys->fs_data = fs;
+			return fsys;
+		}
+		++x;
+	}
+	fprintf(stderr, "can't find support file system.\n");
+	return NULL;
+}
+
+int vfs_dir_iterate(filesys_t fs, const char *dir, int (*foreach)(void *, const char *, struct xstat *, int is_dir), void *user_data)
+{
+	return fs->fs_ops->dir_iterate(fs->fs_data, dir, foreach, user_data);
+}
+
+int vfs_umount(filesys_t fsys)
+{
+	int x;
+	x = fsys->fs_ops->umount(fsys->fs_data);
+	free(fsys);
+	return x;
 }
 

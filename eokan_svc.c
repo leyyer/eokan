@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include "disk.h"
+#include "fs.h"
 
 #define EOKAN_SVCNAME TEXT("eokan_svc")
 
@@ -134,6 +135,7 @@ int main(int argc, char *argv[])
 {
 	int c, retval = 0;
 	disk_descr_t disk;
+	filesys_t  fs;
 	int part = 1;
 	part_descr_t partition;
 	const char *disk_type = "vmdk";
@@ -192,13 +194,12 @@ int main(int argc, char *argv[])
 		exit(-2);
 	}
     printf("parition: %d, offset: %I64u, length: %I64u\n", part, partition->off, partition->length);
-    if (ext4fs_mount(partition) < 0 ) {
-        retval = -1;
-        goto skip;
-    }
-    ext4fs_ls("/");
-	eokan_main();
-    ext4fs_close();
+	if ((fs = vfs_mount(partition)) == NULL) {
+		retval = -1;
+		goto skip;
+	}
+	eokan_main(fs);
+    vfs_umount(fs);
  skip:
 	part_close(partition);
 	disk_close(disk);

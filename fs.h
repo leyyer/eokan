@@ -35,19 +35,24 @@ struct xstat {
 	uint32_t size_high;
 };
 
+struct filesys_spec;
 struct file_entry {
+	int (*read)(struct file_entry *, struct filesys_spec*, char *buf, unsigned len);
+	int (*close)(struct file_entry *, struct filesys_spec *);
 };
 
-struct filesys_descr;
 struct filesys_operations {
-	struct filesys_descr *(*mount)(struct part_descr *);
-	int (*dir_iterate)(struct filesys_descr *, int (*)(void *, const char *, struct xstat *, int is_dir), void *);
-	int (*umount)(struct filesys_descr *);
-	struct file_entry *(*open)(struct filesys_descr *);
-	int (*close)(struct file_entry *);
+	struct filesys_spec *(*mount)(struct part_descr *);
+	int (*dir_iterate)(struct filesys_spec *, const char *dir, int (*)(void *, const char *, struct xstat *, int is_dir), void *);
+	int (*umount)(struct filesys_spec *);
+	struct file_entry *(*open)(struct filesys_spec *, const char *file);
 };
 
-int fs_devread(struct part_descr *part_info, int sector, int byte_offset, int byte_len, char *buf);
+typedef struct filesys_descr *filesys_t;
 
+int vfs_devread(struct part_descr *part_info, int sector, int byte_offset, int byte_len, char *buf);
+filesys_t vfs_mount(struct part_descr* part);
+int vfs_umount(filesys_t fsys);
+int vfs_dir_iterate(filesys_t, const char *dir, int (*)(void *, const char *, struct xstat *, int is_dir), void *);
 #endif
 

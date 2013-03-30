@@ -244,8 +244,9 @@ static int list_all_files(void *data, const char *name, struct xstat *st, int is
 
 static int __FindFiles(LPCWSTR	FileName, PFillFindData	FillFindData /* function pointer */, PDOKAN_FILE_INFO	DokanFileInfo)
 {
-	char				filePath[MAX_PATH] = {0};
+	char filePath[MAX_PATH] = {0};
 	struct find_cb_data find_data;
+	filesys_t fs = (filesys_t)DokanFileInfo->DokanOptions->GlobalContext;
 
 	memset(&find_data, 0, sizeof find_data);
 
@@ -255,7 +256,7 @@ static int __FindFiles(LPCWSTR	FileName, PFillFindData	FillFindData /* function 
 	find_data.fill_find = FillFindData;
 	find_data.finfo = DokanFileInfo;
 
-	ext4fs_list_files(filePath, list_all_files, &find_data);
+	vfs_dir_iterate(fs, filePath, list_all_files, &find_data);
 	return 0;
 }
 
@@ -406,7 +407,7 @@ static int __Unmount(
 }
 
 
-int eokan_main()
+int eokan_main(filesys_t fs)
 {
 	int status;
 	DOKAN_OPERATIONS doperations;
@@ -444,6 +445,7 @@ int eokan_main()
 
 	dokanOptions->Options |= DOKAN_OPTION_KEEP_ALIVE;
 	dokanOptions->MountPoint = MountPoint;
+	dokanOptions->GlobalContext = (ULONG64)fs;
 
 	memset(dokanOperations, 0, sizeof *dokanOperations);
 	dokanOperations->CreateFile            = __CreateFile;

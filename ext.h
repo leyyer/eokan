@@ -161,6 +161,19 @@ struct ext2_dirent {
 struct ext2fs_node {
 	struct ext2_data *data;
 	struct ext2_inode inode;
+
+	uint32_t *indir1_block;
+	int indir1_size;
+	int indir1_blkno;
+
+	uint32_t *indir2_block;
+	int indir2_size;
+	int indir2_blkno;
+
+	uint32_t *indir3_block;
+	int indir3_size;
+	int indir3_blkno;
+
 	int ino;
 	int inode_read;
 };
@@ -172,15 +185,4 @@ struct ext2_data {
 	struct ext2fs_node diropen;
 };
 
-extern unsigned long part_offset;
-
-#if 0
-int do_ext2ls(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[]);
-int do_ext2load(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[]);
-int do_ext4_load(cmd_tbl_t *cmdtp, int flag, int argc,
-					char *const argv[]);
-int do_ext4_ls(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[]);
-int do_ext4_write(cmd_tbl_t *cmdtp, int flag, int argc,
-				char *const argv[]);
-#endif
 #endif
