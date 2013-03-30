@@ -1,32 +1,29 @@
-/* 
- * Copyright (c) 2013, Renyi su <surenyi@gmail.com> * All rights reserved.
-
- * Redistribution and use in source and binary forms, with or without modification, 
+/*
+ * Copyright (c) 2013, Renyi su <surenyi@gmail.com> All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, 
- * this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice, 
- * this list of conditions and the following disclaimer 
- * in the documentation and/or other materials provided with the distribution.
-
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
- * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, 
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; 
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer. Redistributions in binary form must
+ * reproduce the above copyright notice, this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef __EXT4__
 #define __EXT4__
 #include "ext.h"
-#include "disk.h"
 
 #define EXT4_EXTENTS_FL		0x00080000 /* Inode uses extents */
 #define EXT4_EXT_MAGIC			0xf30a
@@ -76,6 +73,7 @@ struct ext4_extent_header {
 	uint32_t	eh_generation;	/* generation of the tree */
 };
 
+struct part_descr;
 struct ext_filesystem {
 	/* Total Sector of partition */
 	uint64_t total_sect;
@@ -109,9 +107,10 @@ struct ext_filesystem {
 
 	/* Journal Related */
 
-	/* Block Device Descriptor */
-	/* block_dev_desc_t *dev_desc; */
-	void *dev_desc;
+	/* Partition Device Descriptor */
+	struct part_descr *dev_desc;
+	/* fs root */
+	struct ext2_data *ext4fs_root;
 };
 
 extern struct ext2_data *ext4fs_root;
@@ -129,14 +128,13 @@ int ext4fs_write(const char *fname, unsigned char *buffer,
 				unsigned long sizebytes);
 #endif
 
+struct part_descr;
 struct ext_filesystem *get_fs(void);
 int ext4fs_open(const char *filename);
 int ext4fs_read(char *buf, unsigned len);
-int ext4fs_mount(part_descr_t);
+int ext4fs_mount(struct part_descr *);
 void ext4fs_close(void);
 int ext4fs_ls(const char *dirname);
 void ext4fs_free_node(struct ext2fs_node *node, struct ext2fs_node *currroot);
-int ext4fs_devread(int sector, int byte_offset, int byte_len, char *buf);
-//void ext4fs_set_blk_dev(block_dev_desc_t *rbdd, disk_partition_t *info);
 long int read_allocated_block(struct ext2_inode *inode, int fileblock);
 #endif

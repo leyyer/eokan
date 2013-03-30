@@ -1,23 +1,97 @@
-/* 
- * Copyright (c) 2013, Renyi su <surenyi@gmail.com> * All rights reserved.
-
- * Redistribution and use in source and binary forms, with or without modification, 
+/*
+ * Copyright (c) 2013, Renyi su <surenyi@gmail.com> All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, 
- * this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice, 
- * this list of conditions and the following disclaimer 
- * in the documentation and/or other materials provided with the distribution.
-
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
- * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, 
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; 
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer. Redistributions in binary form must
+ * reproduce the above copyright notice, this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
+#include <stdio.h>
+#include <string.h>
+#include "disk.h"
+#include "util.h"
+
+int fs_devread(part_descr_t part_info, int sector, int byte_offset, int byte_len, char *buf)
+{
+	unsigned block_len;
+	unsigned char sec_buf[SECTOR_SIZE];
+
+	/* Check partition boundaries */
+	if ((sector < 0) || ((sector + ((byte_offset + byte_len - 1) >> SECTOR_BITS)) >= part_info->length)) {
+		printf("%s read outside partition %d\n", __func__, sector);
+		return 0;
+	}
+
+	/* Get the read to the beginning of a partition */
+	sector += byte_offset >> SECTOR_BITS;
+	byte_offset &= SECTOR_SIZE - 1;
+#ifdef DEBUG
+	printf(" <%d, %d, %d>\n", sector, byte_offset, byte_len);
+#endif
+	if (part_info == NULL) {
+		printf("** Invalid Block Device Descriptor (NULL)\n");
+		return 0;
+	}
+
+	if (byte_offset != 0) {
+		/* read first part which isn't aligned with start of sector */
+		if (part_read(part_info, sector, 1, sec_buf) < 0 ) {
+			printf(" ** ext2fs_devread() read error **\n");
+			return 0;
+		}
+		memcpy(buf, sec_buf + byte_offset,
+				MIN(SECTOR_SIZE - byte_offset, byte_len));
+		buf += MIN(SECTOR_SIZE - byte_offset, byte_len);
+		byte_len -= MIN(SECTOR_SIZE - byte_offset, byte_len);
+		sector++;
+	}
+
+	if (byte_len == 0)
+		return 1;
+
+	/* read sector aligned part */
+	block_len = byte_len & ~(SECTOR_SIZE - 1);
+
+	if (block_len == 0) {
+		uint8_t p[SECTOR_SIZE];
+
+		block_len = SECTOR_SIZE;
+		part_read(part_info, sector, 1, p);
+		memcpy(buf, p, byte_len);
+		return 1;
+	}
+
+	if (part_read(part_info, sector, block_len / SECTOR_SIZE, buf) < 0) {
+		printf(" ** %s read error - block\n", __func__);
+		return 0;
+	}
+	block_len = byte_len & ~(SECTOR_SIZE - 1);
+	buf += block_len;
+	byte_len -= block_len;
+	sector += block_len / SECTOR_SIZE;
+
+	if (byte_len != 0) {
+		/* read rest of data which are not in whole sector */
+		if (part_read(part_info, sector, 1, sec_buf) < 0) {
+			printf("* %s read error - last part\n", __func__);
+			return 0;
+		}
+		memcpy(buf, sec_buf, byte_len);
+	}
+	return 1;
+}
+

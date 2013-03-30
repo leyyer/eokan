@@ -1,25 +1,24 @@
-/* 
- * Copyright (c) 2013, Renyi su <surenyi@gmail.com> * All rights reserved.
-
- * Redistribution and use in source and binary forms, with or without modification, 
+/*
+ * Copyright (c) 2013, Renyi su <surenyi@gmail.com> All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, 
- * this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice, 
- * this list of conditions and the following disclaimer 
- * in the documentation and/or other materials provided with the distribution.
-
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
- * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, 
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; 
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer. Redistributions in binary form must
+ * reproduce the above copyright notice, this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <windows.h>
@@ -35,7 +34,6 @@
 static WCHAR MountPoint[MAX_PATH] = L"M:";
 static BOOL g_UseStdErr;
 static BOOL g_DebugMode;
-static CRITICAL_SECTION g_Cs;
 
 static void DbgPrint(LPCWSTR format, ...)
 {
@@ -70,8 +68,7 @@ static int GetFilePath(char *file, int size, LPCWSTR name)
 	return nby;
 }
 
-static int
-__CreateFile(
+static int __CreateFile(
 	LPCWSTR					FileName,
 	DWORD					AccessMode,
 	DWORD					ShareMode,
@@ -103,8 +100,7 @@ __CreateFile(
 	return 0;
 }
 
-static int
-__CreateDirectory(
+static int __CreateDirectory(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
@@ -114,25 +110,21 @@ __CreateDirectory(
 	return 0;
 }
 
-static int
-__OpenDirectory(
+static int __OpenDirectory(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
 	char FilePath[MAX_PATH] = {0};
 	DWORD attr;
-	
+
 	DbgPrint(L"OpenDirectory : %s\n", FileName);
 	utf16_to_utf8(FileName, wcslen(FileName), FilePath, sizeof FilePath);
-	EnterCriticalSection(&g_Cs);
-	LeaveCriticalSection(&g_Cs);
 	DokanFileInfo->Context = (ULONG64)0;
 
 	return 0;
 }
 
-static int
-__CloseFile(
+static int __CloseFile(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
@@ -140,20 +132,16 @@ __CloseFile(
 }
 
 
-static int
-__Cleanup(
+static int __Cleanup(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
-	EnterCriticalSection(&g_Cs);
 	DokanFileInfo->Context = 0;
-	LeaveCriticalSection(&g_Cs);
 	return 0;
 }
 
 
-static int
-__ReadFile(
+static int __ReadFile(
 	LPCWSTR				FileName,
 	LPVOID				Buffer,
 	DWORD				BufferLength,
@@ -172,8 +160,7 @@ __ReadFile(
 }
 
 
-static int
-__WriteFile(
+static int __WriteFile(
 	LPCWSTR		FileName,
 	LPCVOID		Buffer,
 	DWORD		NumberOfBytesToWrite,
@@ -192,8 +179,7 @@ __WriteFile(
 }
 
 
-static int
-__FlushFileBuffers(
+static int __FlushFileBuffers(
 	LPCWSTR		FileName,
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
@@ -206,8 +192,7 @@ __FlushFileBuffers(
 }
 
 
-static int
-__GetFileInformation(
+static int __GetFileInformation(
 	LPCWSTR							FileName,
 	LPBY_HANDLE_FILE_INFORMATION	HandleFileInformation,
 	PDOKAN_FILE_INFO				DokanFileInfo)
@@ -225,7 +210,7 @@ struct find_cb_data {
 	PDOKAN_FILE_INFO finfo;
 };
 
-static void list_all_files(void *data, const char *name, struct xstat *st, int is_dir)
+static int list_all_files(void *data, const char *name, struct xstat *st, int is_dir)
 {
 	char path[MAX_PATH] = {0}, *dp;
 	const char *sp;
@@ -248,19 +233,16 @@ static void list_all_files(void *data, const char *name, struct xstat *st, int i
 	dw.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
 	if (is_dir) {
 		dw.dwFileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
-	} 
+	}
 	utf8_to_utf16(path, strlen(path), dw.cFileName, MAX_PATH);
 	wprintf(L"list_files: %s\n", dw.cFileName);
 	dw.nFileSizeHigh = st->size_high;
 	dw.nFileSizeLow  = st->size;
 	fdp->fill_find(&dw, fdp->finfo);
+	return 0;
 }
 
-static int
-__FindFiles(
-	LPCWSTR				FileName,
-	PFillFindData		FillFindData, // function pointer
-	PDOKAN_FILE_INFO	DokanFileInfo)
+static int __FindFiles(LPCWSTR	FileName, PFillFindData	FillFindData /* function pointer */, PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	char				filePath[MAX_PATH] = {0};
 	struct find_cb_data find_data;
@@ -273,16 +255,11 @@ __FindFiles(
 	find_data.fill_find = FillFindData;
 	find_data.finfo = DokanFileInfo;
 
-	EnterCriticalSection(&g_Cs);
 	ext4fs_list_files(filePath, list_all_files, &find_data);
-	LeaveCriticalSection(&g_Cs);
 	return 0;
 }
 
-static int
-__DeleteFile(
-	LPCWSTR				FileName,
-	PDOKAN_FILE_INFO	DokanFileInfo)
+static int __DeleteFile( LPCWSTR FileName, PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	char	filePath[MAX_PATH * 2];
 	HANDLE	handle = (HANDLE)DokanFileInfo->Context;
@@ -294,18 +271,14 @@ __DeleteFile(
 	return 0;
 }
 
-static int
-__DeleteDirectory(
-	LPCWSTR				FileName,
-	PDOKAN_FILE_INFO	DokanFileInfo)
+static int __DeleteDirectory( LPCWSTR FileName, PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	DbgPrint(L"DeleteDirectory %s\n", FileName);
 	return -1;
 }
 
 
-static int
-__MoveFile(
+static int __MoveFile(
 	LPCWSTR				FileName, // existing file name
 	LPCWSTR				NewFileName,
 	BOOL				ReplaceIfExisting,
@@ -316,8 +289,7 @@ __MoveFile(
 }
 
 
-static int
-__LockFile(
+static int __LockFile(
 	LPCWSTR				FileName,
 	LONGLONG			ByteOffset,
 	LONGLONG			Length,
@@ -327,8 +299,7 @@ __LockFile(
 	return 0;
 }
 
-static int
-__SetEndOfFile(
+static int __SetEndOfFile(
 	LPCWSTR				FileName,
 	LONGLONG			ByteOffset,
 	PDOKAN_FILE_INFO	DokanFileInfo)
@@ -338,20 +309,16 @@ __SetEndOfFile(
 }
 
 
-static int
-__SetAllocationSize(
-	LPCWSTR				FileName,
+static int __SetAllocationSize(LPCWSTR	FileName,
 	LONGLONG			AllocSize,
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	DbgPrint(L"SetAllocationSize %s, %I64d\n", FileName, AllocSize);
-
 	return 0;
 }
 
 
-static int
-__SetFileAttributes(
+static int __SetFileAttributes(
 	LPCWSTR				FileName,
 	DWORD				FileAttributes,
 	PDOKAN_FILE_INFO	DokanFileInfo)
@@ -360,8 +327,7 @@ __SetFileAttributes(
 }
 
 
-static int
-__SetFileTime(
+static int __SetFileTime(
 	LPCWSTR				FileName,
 	CONST FILETIME*		CreationTime,
 	CONST FILETIME*		LastAccessTime,
@@ -373,8 +339,7 @@ __SetFileTime(
 }
 
 
-static int
-__UnlockFile(
+static int __UnlockFile(
 	LPCWSTR				FileName,
 	LONGLONG			ByteOffset,
 	LONGLONG			Length,
@@ -385,8 +350,7 @@ __UnlockFile(
 }
 
 
-static int
-__GetFileSecurity(
+static int __GetFileSecurity(
 	LPCWSTR					FileName,
 	PSECURITY_INFORMATION	SecurityInformation,
 	PSECURITY_DESCRIPTOR	SecurityDescriptor,
@@ -399,8 +363,7 @@ __GetFileSecurity(
 }
 
 
-static int
-__SetFileSecurity(
+static int __SetFileSecurity(
 	LPCWSTR					FileName,
 	PSECURITY_INFORMATION	SecurityInformation,
 	PSECURITY_DESCRIPTOR	SecurityDescriptor,
@@ -410,8 +373,7 @@ __SetFileSecurity(
 	return 0;
 }
 
-static int
-__GetVolumeInformation(
+static int __GetVolumeInformation(
 	LPWSTR		VolumeNameBuffer,
 	DWORD		VolumeNameSize,
 	LPDWORD		VolumeSerialNumber,
@@ -422,12 +384,12 @@ __GetVolumeInformation(
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	const char *label = "linuxfs";
-	
+
 	utf8_to_utf16(label, strlen(label), VolumeNameBuffer, VolumeNameSize);
 	*VolumeSerialNumber = 0x19821215;
 	*MaximumComponentLength = 256;
-	*FileSystemFlags = FILE_CASE_SENSITIVE_SEARCH | 
-						FILE_CASE_PRESERVED_NAMES | 
+	*FileSystemFlags = FILE_CASE_SENSITIVE_SEARCH |
+						FILE_CASE_PRESERVED_NAMES |
 						FILE_SUPPORTS_REMOTE_STORAGE |
 						FILE_UNICODE_ON_DISK |
 						FILE_PERSISTENT_ACLS;
@@ -436,8 +398,7 @@ __GetVolumeInformation(
 	return 0;
 }
 
-static int
-__Unmount(
+static int __Unmount(
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	DbgPrint(L"Unmount\n");
@@ -474,7 +435,6 @@ int eokan_main()
 	dokanOptions->Version = DOKAN_VERSION;
 	dokanOptions->ThreadCount = 1;
 
-	InitializeCriticalSection(&g_Cs);
 	if (g_DebugMode) {
 		dokanOptions->Options |= DOKAN_OPTION_DEBUG;
 	}
@@ -502,7 +462,7 @@ int eokan_main()
 	dokanOperations->DeleteDirectory       = __DeleteDirectory;
 	dokanOperations->MoveFile              = __MoveFile;
 	dokanOperations->SetEndOfFile          = __SetEndOfFile;
-	dokanOperations->SetAllocationSize     = __SetAllocationSize;	
+	dokanOperations->SetAllocationSize     = __SetAllocationSize;
 	dokanOperations->LockFile              = __LockFile;
 	dokanOperations->UnlockFile            = __UnlockFile;
 	dokanOperations->GetFileSecurity       = __GetFileSecurity;
@@ -540,7 +500,6 @@ int eokan_main()
 		break;
 	}
 	FreeLibrary(libdokan);
-	DeleteCriticalSection(&g_Cs);
 	return 0;
 }
 

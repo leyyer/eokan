@@ -1,25 +1,24 @@
 /*
- * Copyright (c) 2013, Renyi su <surenyi@gmail.com> * All rights reserved.
-
+ * Copyright (c) 2013, Renyi su <surenyi@gmail.com> All rights reserved.
+ *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the distribution.
-
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
- * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer. Redistributions in binary form must
+ * reproduce the above copyright notice, this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
  * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <stdio.h>
@@ -28,6 +27,7 @@
 #include "ext.h"
 #include "ext4fs.h"
 #include "ext4.h"
+#include "disk.h"
 
 int ext4fs_symlinknest;
 struct ext_filesystem ext_fs;
@@ -39,7 +39,8 @@ struct ext_filesystem *get_fs(void)
 
 void ext4fs_free_node(struct ext2fs_node *node, struct ext2fs_node *currroot)
 {
-	if ((node != &ext4fs_root->diropen) && (node != currroot))
+	struct ext_filesystem *fs = get_fs();
+	if ((node != &fs->ext4fs_root->diropen) && (node != currroot))
 		free(node);
 }
 
@@ -63,6 +64,7 @@ int ext4fs_read_file(struct ext2fs_node *node, int pos,
 	int delayed_next = 0;
 	char *delayed_buf = NULL;
 	short status;
+	struct ext_filesystem *fs = get_fs();
 
 	/* Adjust len so it we can't read past the end of the file. */
 	if (len > filesize)
@@ -103,7 +105,7 @@ int ext4fs_read_file(struct ext2fs_node *node, int pos,
 					delayed_extent += blockend;
 					delayed_next += blockend >> SECTOR_BITS;
 				} else {	/* spill */
-					status = ext4fs_devread(delayed_start,
+					status = fs_devread(fs->dev_desc,delayed_start,
 							delayed_skipfirst,
 							delayed_extent,
 							delayed_buf);
@@ -129,7 +131,7 @@ int ext4fs_read_file(struct ext2fs_node *node, int pos,
 		} else {
 			if (previous_block_number != -1) {
 				/* spill */
-				status = ext4fs_devread(delayed_start,
+				status = fs_devread(fs->dev_desc,delayed_start,
 						delayed_skipfirst,
 						delayed_extent,
 						delayed_buf);
@@ -143,7 +145,7 @@ int ext4fs_read_file(struct ext2fs_node *node, int pos,
 	}
 	if (previous_block_number != -1) {
 		/* spill */
-		status = ext4fs_devread(delayed_start,
+		status = fs_devread(fs->dev_desc,delayed_start,
 				delayed_skipfirst, delayed_extent,
 				delayed_buf);
 		if (status == 0)
@@ -154,7 +156,7 @@ int ext4fs_read_file(struct ext2fs_node *node, int pos,
 	return len;
 }
 
-static void ext4fs_ls_dir_func(void *data, const char *name, struct xstat *st, int is_dir)
+static int ext4fs_ls_dir_func(void *data, const char *name, struct xstat *st, int is_dir)
 {
 	int type = FILETYPE_UNKNOWN;
 	if ((st->mode & FILETYPE_INO_MASK) == FILETYPE_INO_DIRECTORY) {
@@ -179,24 +181,26 @@ static void ext4fs_ls_dir_func(void *data, const char *name, struct xstat *st, i
 			break;
 	}
 	printf("%10d %s\n", st->size, name);
+	return 0;
 }
 
 int ext4fs_ls(const char *dirname)
 {
 	struct ext2fs_node *dirnode;
 	int status;
+	struct ext_filesystem *fs = get_fs();
 
 	if (dirname == NULL)
 		return 0;
 
-	status = ext4fs_find_file(dirname, &ext4fs_root->diropen, &dirnode,
+	status = ext4fs_find_file(dirname, &fs->ext4fs_root->diropen, &dirnode,
 			FILETYPE_DIRECTORY);
 	if (status != 1) {
 		printf("** Can not find directory. **\n");
 		return 1;
 	}
 	ext4fs_iterate_dir(dirnode, NULL, NULL, NULL, ext4fs_ls_dir_func, NULL);
-	ext4fs_free_node(dirnode, &ext4fs_root->diropen);
+	ext4fs_free_node(dirnode, &fs->ext4fs_root->diropen);
 
 	return 0;
 }
@@ -205,25 +209,28 @@ int ext4fs_list_files(const char *dirname, dir_iterate_func_t func, void *data)
 {
 	struct ext2fs_node *dirnode;
 	int status;
+	struct ext_filesystem *fs = get_fs();
 
 	if (dirname == NULL)
 		return 0;
 
-	status = ext4fs_find_file(dirname, &ext4fs_root->diropen, &dirnode,
+	status = ext4fs_find_file(dirname, &fs->ext4fs_root->diropen, &dirnode,
 			FILETYPE_DIRECTORY);
 	if (status != 1) {
 		printf("** Can not find directory. [%s] **\n", dirname);
 		return 1;
 	}
 	ext4fs_iterate_dir(dirnode, NULL, NULL, NULL, func, data);
-	ext4fs_free_node(dirnode, &ext4fs_root->diropen);
+	ext4fs_free_node(dirnode, &fs->ext4fs_root->diropen);
 
 	return 0;
 }
 
 int ext4fs_read(char *buf, unsigned len)
 {
-	if (ext4fs_root == NULL || ext4fs_file == NULL)
+	struct ext_filesystem *fs = get_fs();
+
+	if (!fs || fs->ext4fs_root == NULL || ext4fs_file == NULL)
 		return 0;
 
 	return ext4fs_read_file(ext4fs_file, 0, len, buf);
@@ -279,7 +286,7 @@ int ext4fs_get_bgdtable(void)
 	if (!fs->gdtable)
 		return -ENOMEM;
 	/* read the group descriptor table */
-	status = ext4fs_devread(fs->gdtable_blkno * fs->sect_perblk, 0,
+	status = fs_devread(fs->dev_desc,fs->gdtable_blkno * fs->sect_perblk, 0,
 			fs->blksz * fs->no_blk_pergdt, fs->gdtable);
 	if (status == 0)
 		goto fail;
@@ -305,8 +312,8 @@ static void delete_single_indirect_block(struct ext2_inode *inode)
 	int remainder;
 	int bg_idx;
 	int status;
-	unsigned int blk_per_grp = ext4fs_root->sblock.blocks_per_group;
 	struct ext_filesystem *fs = get_fs();
+	unsigned int blk_per_grp = fs->ext4fs_root->sblock.blocks_per_group;
 	char *journal_buffer = zalloc(fs->blksz);
 	if (!journal_buffer) {
 		printf("No memory\n");
@@ -332,8 +339,7 @@ static void delete_single_indirect_block(struct ext2_inode *inode)
 		fs->sb->free_blocks++;
 		/* journal backup */
 		if (prev_bg_bmap_idx != bg_idx) {
-			status =
-				ext4fs_devread(bgd[bg_idx].block_id *
+			status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id *
 						fs->sect_perblk, 0, fs->blksz,
 						journal_buffer);
 			if (status == 0)
@@ -356,11 +362,11 @@ static void delete_double_indirect_block(struct ext2_inode *inode)
 	long int blknr;
 	int remainder;
 	int bg_idx;
-	unsigned int blk_per_grp = ext4fs_root->sblock.blocks_per_group;
+	struct ext_filesystem *fs = get_fs();
+	unsigned int blk_per_grp = fs->ext4fs_root->sblock.blocks_per_group;
 	unsigned int *di_buffer = NULL;
 	unsigned int *DIB_start_addr = NULL;
 	struct ext2_block_group *bgd = NULL;
-	struct ext_filesystem *fs = get_fs();
 	char *journal_buffer = zalloc(fs->blksz);
 	if (!journal_buffer) {
 		printf("No memory\n");
@@ -377,7 +383,7 @@ static void delete_double_indirect_block(struct ext2_inode *inode)
 		}
 		DIB_start_addr = (unsigned int *)di_buffer;
 		blknr = inode->b.blocks.double_indir_block;
-		status = ext4fs_devread(blknr * fs->sect_perblk, 0, fs->blksz,
+		status = fs_devread(fs->dev_desc,blknr * fs->sect_perblk, 0, fs->blksz,
 				(char *)di_buffer);
 		for (i = 0; i < fs->blksz / sizeof(int); i++) {
 			if (*di_buffer == 0)
@@ -399,7 +405,7 @@ static void delete_double_indirect_block(struct ext2_inode *inode)
 			fs->sb->free_blocks++;
 			/* journal backup */
 			if (prev_bg_bmap_idx != bg_idx) {
-				status = ext4fs_devread(bgd[bg_idx].block_id
+				status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id
 						* fs->sect_perblk, 0,
 						fs->blksz,
 						journal_buffer);
@@ -429,7 +435,7 @@ static void delete_double_indirect_block(struct ext2_inode *inode)
 		/* journal backup */
 		if (prev_bg_bmap_idx != bg_idx) {
 			memset(journal_buffer, '\0', fs->blksz);
-			status = ext4fs_devread(bgd[bg_idx].block_id *
+			status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id *
 					fs->sect_perblk, 0, fs->blksz,
 					journal_buffer);
 			if (status == 0)
@@ -455,13 +461,14 @@ static void delete_triple_indirect_block(struct ext2_inode *inode)
 	long int blknr;
 	int remainder;
 	int bg_idx;
-	unsigned int blk_per_grp = ext4fs_root->sblock.blocks_per_group;
+	struct ext_filesystem *fs = get_fs();
+	unsigned int blk_per_grp = fs->ext4fs_root->sblock.blocks_per_group;
 	unsigned int *tigp_buffer = NULL;
 	unsigned int *tib_start_addr = NULL;
 	unsigned int *tip_buffer = NULL;
 	unsigned int *tipb_start_addr = NULL;
 	struct ext2_block_group *bgd = NULL;
-	struct ext_filesystem *fs = get_fs();
+
 	char *journal_buffer = zalloc(fs->blksz);
 	if (!journal_buffer) {
 		printf("No memory\n");
@@ -478,7 +485,7 @@ static void delete_triple_indirect_block(struct ext2_inode *inode)
 		}
 		tib_start_addr = (unsigned int *)tigp_buffer;
 		blknr = inode->b.blocks.triple_indir_block;
-		status = ext4fs_devread(blknr * fs->sect_perblk, 0, fs->blksz,
+		status = fs_devread(fs->dev_desc,blknr * fs->sect_perblk, 0, fs->blksz,
 				(char *)tigp_buffer);
 		for (i = 0; i < fs->blksz / sizeof(int); i++) {
 			if (*tigp_buffer == 0)
@@ -489,7 +496,7 @@ static void delete_triple_indirect_block(struct ext2_inode *inode)
 			if (!tip_buffer)
 				goto fail;
 			tipb_start_addr = (unsigned int *)tip_buffer;
-			status = ext4fs_devread((*tigp_buffer) *
+			status = fs_devread(fs->dev_desc,(*tigp_buffer) *
 					fs->sect_perblk, 0, fs->blksz,
 					(char *)tip_buffer);
 			for (j = 0; j < fs->blksz / sizeof(int); j++) {
@@ -514,8 +521,7 @@ static void delete_triple_indirect_block(struct ext2_inode *inode)
 				fs->sb->free_blocks++;
 				/* journal backup */
 				if (prev_bg_bmap_idx != bg_idx) {
-					status =
-						ext4fs_devread(
+					status = fs_devread(fs->dev_desc,
 								bgd[bg_idx].block_id *
 								fs->sect_perblk, 0,
 								fs->blksz,
@@ -555,8 +561,7 @@ static void delete_triple_indirect_block(struct ext2_inode *inode)
 			/* journal backup */
 			if (prev_bg_bmap_idx != bg_idx) {
 				memset(journal_buffer, '\0', fs->blksz);
-				status =
-					ext4fs_devread(bgd[bg_idx].block_id *
+				status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id *
 							fs->sect_perblk, 0,
 							fs->blksz, journal_buffer);
 				if (status == 0)
@@ -585,7 +590,7 @@ static void delete_triple_indirect_block(struct ext2_inode *inode)
 		/* journal backup */
 		if (prev_bg_bmap_idx != bg_idx) {
 			memset(journal_buffer, '\0', fs->blksz);
-			status = ext4fs_devread(bgd[bg_idx].block_id *
+			status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id *
 					fs->sect_perblk, 0, fs->blksz,
 					journal_buffer);
 			if (status == 0)
@@ -621,17 +626,17 @@ static int ext4fs_delete_file(int inodeno)
 	unsigned int inodes_per_block;
 	long int blkno;
 	unsigned int blkoff;
-	unsigned int blk_per_grp = ext4fs_root->sblock.blocks_per_group;
-	unsigned int inode_per_grp = ext4fs_root->sblock.inodes_per_group;
+	struct ext_filesystem *fs = get_fs();
+	unsigned int blk_per_grp = fs->ext4fs_root->sblock.blocks_per_group;
+	unsigned int inode_per_grp = fs->ext4fs_root->sblock.inodes_per_group;
 	struct ext2_inode *inode_buffer = NULL;
 	struct ext2_block_group *bgd = NULL;
-	struct ext_filesystem *fs = get_fs();
 	char *journal_buffer = zalloc(fs->blksz);
 	if (!journal_buffer)
 		return -ENOMEM;
 	/* get the block group descriptor table */
 	bgd = (struct ext2_block_group *)fs->gdtable;
-	status = ext4fs_read_inode(ext4fs_root, inodeno, &inode);
+	status = ext4fs_read_inode(fs->ext4fs_root, inodeno, &inode);
 	if (status == 0)
 		goto fail;
 
@@ -645,7 +650,7 @@ static int ext4fs_delete_file(int inodeno)
 			zalloc(sizeof(struct ext2fs_node));
 		if (!node_inode)
 			goto fail;
-		node_inode->data = ext4fs_root;
+		node_inode->data = fs->ext4fs_root;
 		node_inode->ino = inodeno;
 		node_inode->inode_read = 0;
 		memcpy(&(node_inode->inode), &inode, sizeof(struct ext2_inode));
@@ -670,8 +675,7 @@ static int ext4fs_delete_file(int inodeno)
 
 			/* journal backup */
 			if (prev_bg_bmap_idx != bg_idx) {
-				status =
-					ext4fs_devread(bgd[bg_idx].block_id *
+				status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id *
 							fs->sect_perblk, 0,
 							fs->blksz, journal_buffer);
 				if (status == 0)
@@ -715,7 +719,7 @@ static int ext4fs_delete_file(int inodeno)
 			/* journal backup */
 			if (prev_bg_bmap_idx != bg_idx) {
 				memset(journal_buffer, '\0', fs->blksz);
-				status = ext4fs_devread(bgd[bg_idx].block_id
+				status = fs_devread(fs->dev_desc,bgd[bg_idx].block_id
 						* fs->sect_perblk,
 						0, fs->blksz,
 						journal_buffer);
@@ -746,7 +750,7 @@ static int ext4fs_delete_file(int inodeno)
 	if (!read_buffer)
 		goto fail;
 	start_block_address = read_buffer;
-	status = ext4fs_devread(blkno * fs->sect_perblk,
+	status = fs_devread(fs->dev_desc,blkno * fs->sect_perblk,
 			0, fs->blksz, read_buffer);
 	if (status == 0)
 		goto fail;
@@ -769,7 +773,7 @@ static int ext4fs_delete_file(int inodeno)
 	fs->sb->free_inodes++;
 	/* journal backup */
 	memset(journal_buffer, '\0', fs->blksz);
-	status = ext4fs_devread(bgd[ibmap_idx].inode_id *
+	status = fs_devread(fs->dev_desc,bgd[ibmap_idx].inode_id *
 			fs->sect_perblk, 0, fs->blksz, journal_buffer);
 	if (status == 0)
 		goto fail;
@@ -803,15 +807,15 @@ int ext4fs_init(void)
 	struct ext_filesystem *fs = get_fs();
 
 	/* populate fs */
-	fs->blksz = EXT2_BLOCK_SIZE(ext4fs_root);
-	fs->inodesz = INODE_SIZE_FILESYSTEM(ext4fs_root);
+	fs->blksz = EXT2_BLOCK_SIZE(fs->ext4fs_root);
+	fs->inodesz = INODE_SIZE_FILESYSTEM(fs->ext4fs_root);
 	fs->sect_perblk = fs->blksz / SECTOR_SIZE;
 
 	/* get the superblock */
 	fs->sb = zalloc(SUPERBLOCK_SIZE);
 	if (!fs->sb)
-		return -ENOMEM;
-	if (!ext4fs_devread(SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE,
+		return -1;
+	if (!fs_devread(fs->dev_desc,SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE,
 				(char *)fs->sb))
 		goto fail;
 
@@ -821,9 +825,9 @@ int ext4fs_init(void)
 
 	/* get total no of blockgroups */
 	fs->no_blkgrp = (uint32_t)ext4fs_div_roundup(
-			(ext4fs_root->sblock.total_blocks -
-			 ext4fs_root->sblock.first_data_block),
-			ext4fs_root->sblock.blocks_per_group);
+			(fs->ext4fs_root->sblock.total_blocks -
+			 fs->ext4fs_root->sblock.first_data_block),
+			fs->ext4fs_root->sblock.blocks_per_group);
 
 	/* get the block group descriptor table */
 	fs->gdtable_blkno = ((EXT2_MIN_BLOCK_SIZE == fs->blksz) + 1);
@@ -844,8 +848,7 @@ int ext4fs_init(void)
 	}
 
 	for (i = 0; i < fs->no_blkgrp; i++) {
-		status =
-			ext4fs_devread(fs->bgd[i].block_id * fs->sect_perblk, 0,
+		status = fs_devread(fs->dev_desc,fs->bgd[i].block_id * fs->sect_perblk, 0,
 					fs->blksz, (char *)fs->blk_bmaps[i]);
 		if (status == 0)
 			goto fail;
@@ -862,7 +865,7 @@ int ext4fs_init(void)
 	}
 
 	for (i = 0; i < fs->no_blkgrp; i++) {
-		status = ext4fs_devread(fs->bgd[i].inode_id * fs->sect_perblk,
+		status =fs_devread(fs->dev_desc,fs->bgd[i].inode_id * fs->sect_perblk,
 				0, fs->blksz,
 				(char *)fs->inode_bmaps[i]);
 		if (status == 0)
@@ -898,11 +901,11 @@ void ext4fs_deinit(void)
 	/* free journal */
 	char *temp_buff = zalloc(fs->blksz);
 	if (temp_buff) {
-		ext4fs_read_inode(ext4fs_root, EXT2_JOURNAL_INO,
+		ext4fs_read_inode(fs->ext4fs_root, EXT2_JOURNAL_INO,
 				&inode_journal);
 		blknr = read_allocated_block(&inode_journal,
 				EXT2_JOURNAL_SUPERBLOCK);
-		ext4fs_devread(blknr * fs->sect_perblk, 0, fs->blksz,
+		fs_devread(fs->dev_desc,blknr * fs->sect_perblk, 0, fs->blksz,
 				temp_buff);
 		jsb = (struct journal_superblock_t *)temp_buff;
 		jsb->s_start = cpu_to_be32(0);
@@ -913,7 +916,7 @@ void ext4fs_deinit(void)
 	ext4fs_free_journal();
 
 	/* get the superblock */
-	ext4fs_devread(SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE, (char *)fs->sb);
+	fs_devread(fs->dev_desc,SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE, (char *)fs->sb);
 	fs->sb->feature_incompat &= ~EXT3_FEATURE_INCOMPAT_RECOVER;
 	put_ext4((uint64_t)(SUPERBLOCK_SIZE),
 			(struct ext2_sblock *)fs->sb, (uint32_t)SUPERBLOCK_SIZE);
@@ -957,9 +960,9 @@ static int ext4fs_write_file(struct ext2_inode *file_inode,
 {
 	int i;
 	int blockcnt;
-	int log2blocksize = LOG2_EXT2_BLOCK_SIZE(ext4fs_root);
-	unsigned int filesize = file_inode->size;
 	struct ext_filesystem *fs = get_fs();
+	int log2blocksize = LOG2_EXT2_BLOCK_SIZE(fs->ext4fs_root);
+	unsigned int filesize = file_inode->size;
 	int previous_block_number = -1;
 	int delayed_start = 0;
 	int delayed_extent = 0;
@@ -1047,10 +1050,10 @@ int ext4fs_write(const char *fname, unsigned char *buffer,
 	long int itable_blkno;
 	long int parent_itable_blkno;
 	long int blkoff;
-	struct ext2_sblock *sblock = &(ext4fs_root->sblock);
+	struct ext_filesystem *fs = get_fs();
+	struct ext2_sblock *sblock = &(fs->ext4fs_root->sblock);
 	unsigned int inodes_per_block;
 	unsigned int ibmap_idx;
-	struct ext_filesystem *fs = get_fs();
 	ALLOC_CACHE_ALIGN_BUFFER(char, filename, 256);
 	memset(filename, 0x00, sizeof(filename));
 
@@ -1117,13 +1120,13 @@ int ext4fs_write(const char *fname, unsigned char *buffer,
 	temp_ptr = zalloc(fs->blksz);
 	if (!temp_ptr)
 		goto fail;
-	ibmap_idx = inodeno / ext4fs_root->sblock.inodes_per_group;
+	ibmap_idx = inodeno / fs->ext4fs_root->sblock.inodes_per_group;
 	inodeno--;
 	itable_blkno = fs->bgd[ibmap_idx].inode_table_id +
 		(inodeno % sblock->inodes_per_group) /
 		inodes_per_block;
 	blkoff = (inodeno % inodes_per_block) * fs->inodesz;
-	ext4fs_devread(itable_blkno * fs->sect_perblk, 0, fs->blksz, temp_ptr);
+	fs_devread(fs->dev_desc,itable_blkno * fs->sect_perblk, 0, fs->blksz, temp_ptr);
 	if (ext4fs_log_journal(temp_ptr, itable_blkno))
 		goto fail;
 
@@ -1135,7 +1138,7 @@ int ext4fs_write(const char *fname, unsigned char *buffer,
 		printf("Error in copying content\n");
 		goto fail;
 	}
-	ibmap_idx = parent_inodeno / ext4fs_root->sblock.inodes_per_group;
+	ibmap_idx = parent_inodeno / fs->ext4fs_root->sblock.inodes_per_group;
 	parent_inodeno--;
 	parent_itable_blkno = fs->bgd[ibmap_idx].inode_table_id +
 		(parent_inodeno %
@@ -1143,7 +1146,7 @@ int ext4fs_write(const char *fname, unsigned char *buffer,
 	blkoff = (parent_inodeno % inodes_per_block) * fs->inodesz;
 	if (parent_itable_blkno != itable_blkno) {
 		memset(temp_ptr, '\0', fs->blksz);
-		ext4fs_devread(parent_itable_blkno * fs->sect_perblk,
+		fs_devread(fs->dev_desc,parent_itable_blkno * fs->sect_perblk,
 				0, fs->blksz, temp_ptr);
 		if (ext4fs_log_journal(temp_ptr, parent_itable_blkno))
 			goto fail;

@@ -1,29 +1,30 @@
-/* 
+/*
  * Copyright (c) 2013, Renyi su <surenyi@gmail.com> * All rights reserved.
-
- * Redistribution and use in source and binary forms, with or without modification, 
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, 
+ *
+ * Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice, 
- * this list of conditions and the following disclaimer 
+ * Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer
  * in the documentation and/or other materials provided with the distribution.
-
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
- * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, 
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; 
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
+ * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef __XOKAN_FS_H__
 #define __XOKAN_FS_H__
+struct part_descr;
 
 struct xstat {
 	uint16_t mode;
@@ -33,6 +34,20 @@ struct xstat {
 	uint32_t size;
 	uint32_t size_high;
 };
+
+struct file_entry {
+};
+
+struct filesys_descr;
+struct filesys_operations {
+	struct filesys_descr *(*mount)(struct part_descr *);
+	int (*dir_iterate)(struct filesys_descr *, int (*)(void *, const char *, struct xstat *, int is_dir), void *);
+	int (*umount)(struct filesys_descr *);
+	struct file_entry *(*open)(struct filesys_descr *);
+	int (*close)(struct file_entry *);
+};
+
+int fs_devread(struct part_descr *part_info, int sector, int byte_offset, int byte_len, char *buf);
 
 #endif
 

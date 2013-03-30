@@ -1,25 +1,24 @@
-/* 
- * Copyright (c) 2013, Renyi su <surenyi@gmail.com> * All rights reserved.
-
- * Redistribution and use in source and binary forms, with or without modification, 
+/*
+ * Copyright (c) 2013, Renyi su <surenyi@gmail.com> All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, 
- * this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice, 
- * this list of conditions and the following disclaimer 
- * in the documentation and/or other materials provided with the distribution.
-
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
- * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, 
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; 
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer. Redistributions in binary form must
+ * reproduce the above copyright notice, this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <stdio.h>
@@ -75,7 +74,7 @@ int ext4fs_init_journal(void)
 		journal_ptr[gindex]->buf = zalloc(fs->blksz);
 		if (!journal_ptr[gindex]->buf)
 			goto fail;
-		ext4fs_devread(0, 0, fs->blksz, temp);
+		fs_devread(fs->dev_desc,0, 0, fs->blksz, temp);
 		memcpy(temp + SUPERBLOCK_SIZE, fs->sb, SUPERBLOCK_SIZE);
 		memcpy(journal_ptr[gindex]->buf, temp, fs->blksz);
 		journal_ptr[gindex++]->blknr = 0;
@@ -352,11 +351,11 @@ void recover_transaction(int prev_desc_logical_no)
 	if (!temp_buff || !metadata_buff)
 		goto fail;
 	i = prev_desc_logical_no;
-	ext4fs_read_inode(ext4fs_root, EXT2_JOURNAL_INO,
+	ext4fs_read_inode(fs->ext4fs_root, EXT2_JOURNAL_INO,
 			  (struct ext2_inode *)&inode_journal);
 	blknr = read_allocated_block((struct ext2_inode *)
 				     &inode_journal, i);
-	ext4fs_devread(blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
+	fs_devread(fs->dev_desc,blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
 	p_jdb = (char *)temp_buff;
 	jdb = (struct journal_header_t *) temp_buff;
 	ofs = sizeof(struct journal_header_t);
@@ -380,7 +379,7 @@ void recover_transaction(int prev_desc_logical_no)
 				continue;
 		}
 		blknr = read_allocated_block(&inode_journal, i);
-		ext4fs_devread(blknr * fs->sect_perblk, 0,
+		fs_devread(fs->dev_desc,blknr * fs->sect_perblk, 0,
 			       fs->blksz, metadata_buff);
 		put_ext4((uint64_t)(be32_to_cpu(tag->block) * fs->blksz),
 			 metadata_buff, (uint32_t) fs->blksz);
@@ -425,9 +424,9 @@ int ext4fs_check_journal_state(int recovery_flag)
 		return -2;
 	}
 
-	ext4fs_read_inode(ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
+	ext4fs_read_inode(fs->ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
 	blknr = read_allocated_block(&inode_journal, EXT2_JOURNAL_SUPERBLOCK);
-	ext4fs_devread(blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
+	fs_devread(fs->dev_desc,blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
 	jsb = (struct journal_superblock_t *) temp_buff;
 
 	if (fs->sb->feature_incompat & EXT3_FEATURE_INCOMPAT_RECOVER) {
@@ -451,7 +450,7 @@ int ext4fs_check_journal_state(int recovery_flag)
 	while (1) {
 		blknr = read_allocated_block(&inode_journal, i);
 		memset(temp_buff1, '\0', fs->blksz);
-		ext4fs_devread(blknr * fs->sect_perblk,
+		fs_devread(fs->dev_desc,blknr * fs->sect_perblk,
 			       0, fs->blksz, temp_buff1);
 		jdb = (struct journal_header_t *) temp_buff1;
 
@@ -530,7 +529,7 @@ end:
 		jsb->s_start = cpu_to_be32(1);
 		jsb->s_sequence = cpu_to_be32(be32_to_cpu(jsb->s_sequence) + 1);
 		/* get the superblock */
-		ext4fs_devread(SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE,
+		fs_devread(fs->dev_desc,SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE,
 			       (char *)fs->sb);
 		fs->sb->feature_incompat |= EXT3_FEATURE_INCOMPAT_RECOVER;
 
@@ -538,7 +537,7 @@ end:
 		put_ext4((uint64_t) (SUPERBLOCK_SIZE),
 			 (struct ext2_sblock *)fs->sb,
 			 (uint32_t) SUPERBLOCK_SIZE);
-		ext4fs_devread(SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE,
+		fs_devread(fs->dev_desc,SUPERBLOCK_SECTOR, 0, SUPERBLOCK_SIZE,
 			       (char *)fs->sb);
 
 		blknr = read_allocated_block(&inode_journal,
@@ -569,10 +568,10 @@ static void update_descriptor_block(long int blknr)
 	if (!temp_buff)
 		return;
 
-	ext4fs_read_inode(ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
+	ext4fs_read_inode(fs->ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
 	jsb_blknr = read_allocated_block(&inode_journal,
 					 EXT2_JOURNAL_SUPERBLOCK);
-	ext4fs_devread(jsb_blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
+	fs_devread(fs->dev_desc,jsb_blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
 	jsb = (struct journal_superblock_t *) temp_buff;
 
 	jdb.h_blocktype = cpu_to_be32(EXT3_JOURNAL_DESCRIPTOR_BLOCK);
@@ -619,10 +618,10 @@ static void update_commit_block(long int blknr)
 	if (!temp_buff)
 		return;
 
-	ext4fs_read_inode(ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
+	ext4fs_read_inode(fs->ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
 	jsb_blknr = read_allocated_block(&inode_journal,
 					 EXT2_JOURNAL_SUPERBLOCK);
-	ext4fs_devread(jsb_blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
+	fs_devread(fs->dev_desc,jsb_blknr * fs->sect_perblk, 0, fs->blksz, temp_buff);
 	jsb = (struct journal_superblock_t *) temp_buff;
 
 	jdb.h_blocktype = cpu_to_be32(EXT3_JOURNAL_COMMIT_BLOCK);
@@ -646,7 +645,7 @@ void ext4fs_update_journal(void)
 	struct ext_filesystem *fs = get_fs();
 	long int blknr;
 	int i;
-	ext4fs_read_inode(ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
+	ext4fs_read_inode(fs->ext4fs_root, EXT2_JOURNAL_INO, &inode_journal);
 	blknr = read_allocated_block(&inode_journal, jrnl_blk_idx++);
 	update_descriptor_block(blknr);
 	for (i = 0; i < MAX_JOURNAL_ENTRIES; i++) {
