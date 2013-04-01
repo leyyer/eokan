@@ -31,91 +31,108 @@
 
 static int eokan_svc_install(void)
 {
-    SC_HANDLE schSCManager;
-    SC_HANDLE schService;
-    TCHAR szPath[MAX_PATH];
+	SC_HANDLE schSCManager;
+	SC_HANDLE schService;
+	TCHAR szPath[MAX_PATH];
 
-    if(!GetModuleFileName( NULL, szPath, MAX_PATH )) {
-        printf("Cannot install service (%d)\n", GetLastError());
-        return -1;
-    }
+	if(!GetModuleFileName( NULL, szPath, MAX_PATH )) {
+		printf("Cannot install service (%d)\n", GetLastError());
+		return -1;
+	}
 
-    /* Get a handle to the SCM database. */
-    schSCManager = OpenSCManager(
-        NULL,                    /* local computer */
-        NULL,                    /* ServicesActive database */
-        SC_MANAGER_ALL_ACCESS);  /* full access rights */
+	/* Get a handle to the SCM database. */
+	schSCManager = OpenSCManager(
+			NULL,                    /* local computer */
+			NULL,                    /* ServicesActive database */
+			SC_MANAGER_ALL_ACCESS);  /* full access rights */
 
-    if (NULL == schSCManager) {
-        printf("OpenSCManager failed (%d)\n", GetLastError());
-        return -1;
-    }
+	if (NULL == schSCManager) {
+		printf("OpenSCManager failed (%d)\n", GetLastError());
+		return -1;
+	}
 
-    /* Create the service */
-    schService = CreateService(
-        schSCManager,              // SCM database
-        EOKAN_SVCNAME,             // name of service
-        EOKAN_SVCNAME,             // service name to display
-        SERVICE_ALL_ACCESS,        // desired access
-        SERVICE_WIN32_OWN_PROCESS, // service type
-        SERVICE_DEMAND_START,      // start type
-        SERVICE_ERROR_NORMAL,      // error control type
-        szPath,                    // path to service's binary
-        NULL,                      // no load ordering group
-        NULL,                      // no tag identifier
-        NULL,                      // no dependencies
-        NULL,                      // LocalSystem account
-        NULL);                     // no password
+	/* Create the service */
+	schService = CreateService(
+			schSCManager,              // SCM database
+			EOKAN_SVCNAME,             // name of service
+			EOKAN_SVCNAME,             // service name to display
+			SERVICE_ALL_ACCESS,        // desired access
+			SERVICE_WIN32_OWN_PROCESS, // service type
+			SERVICE_DEMAND_START,      // start type
+			SERVICE_ERROR_NORMAL,      // error control type
+			szPath,                    // path to service's binary
+			NULL,                      // no load ordering group
+			NULL,                      // no tag identifier
+			NULL,                      // no dependencies
+			NULL,                      // LocalSystem account
+			NULL);                     // no password
 
-    if (schService == NULL){
-        printf("CreateService failed (%d)\n", GetLastError());
-        CloseServiceHandle(schSCManager);
-        return -2;
-    }
-    else printf("Service installed successfully\n");
+	if (schService == NULL){
+		printf("CreateService failed (%d)\n", GetLastError());
+		CloseServiceHandle(schSCManager);
+		return -2;
+	}
+	else printf("Service installed successfully\n");
 
-    CloseServiceHandle(schService);
-    CloseServiceHandle(schSCManager);
+	CloseServiceHandle(schService);
+	CloseServiceHandle(schSCManager);
 	return 0;
 }
 
 int __stdcall eokan_svc_remove(void)
 {
-    SC_HANDLE schSCManager;
-    SC_HANDLE schService;
-    SERVICE_STATUS ssStatus;
+	SC_HANDLE schSCManager;
+	SC_HANDLE schService;
+	SERVICE_STATUS ssStatus;
 
-    // Get a handle to the SCM database.
-    schSCManager = OpenSCManager(
-        NULL,                    // local computer
-        NULL,                    // ServicesActive database
-        SC_MANAGER_ALL_ACCESS);  // full access rights
+	// Get a handle to the SCM database.
+	schSCManager = OpenSCManager(
+			NULL,                    // local computer
+			NULL,                    // ServicesActive database
+			SC_MANAGER_ALL_ACCESS);  // full access rights
 
-    if (NULL == schSCManager) {
-        printf("OpenSCManager failed (%d)\n", GetLastError());
-        return -1;
-    }
+	if (NULL == schSCManager) {
+		printf("OpenSCManager failed (%d)\n", GetLastError());
+		return -1;
+	}
 
-    schService = OpenService(
-        schSCManager,       // SCM database
-        EOKAN_SVCNAME,      // name of service
-        DELETE);            // need delete access
+	schService = OpenService(
+			schSCManager,       // SCM database
+			EOKAN_SVCNAME,      // name of service
+			DELETE);            // need delete access
 
-    if (schService == NULL){
-        printf("OpenService failed (%d)\n", GetLastError());
-        CloseServiceHandle(schSCManager);
-        return -2;
-    }
+	if (schService == NULL){
+		printf("OpenService failed (%d)\n", GetLastError());
+		CloseServiceHandle(schSCManager);
+		return -2;
+	}
 
-    // Delete the service.
-    if (! DeleteService(schService)) {
-        printf("DeleteService failed (%d)\n", GetLastError());
-    }
-    else printf("Service deleted successfully\n");
+	// Delete the service.
+	if (! DeleteService(schService)) {
+		printf("DeleteService failed (%d)\n", GetLastError());
+	}
+	else printf("Service deleted successfully\n");
 
-    CloseServiceHandle(schService);
-    CloseServiceHandle(schSCManager);
+	CloseServiceHandle(schService);
+	CloseServiceHandle(schSCManager);
 	return 0;
+}
+
+static int find_valid_drive(int from)
+{
+	DWORD dflag;
+	int x, c;
+
+	dflag = GetLogicalDrives();
+	for (x = from - 'A'; x < 32 && (dflag & (1 << x)); ++x) {
+		++x;
+	}
+	if (x >= 32) {
+		return 0;
+	}
+	c = 'A' + x;
+	printf("found: drive %c\n", c);
+	return c;
 }
 
 static void print_usage()
@@ -124,6 +141,7 @@ static void print_usage()
 	printf("    -h, --help: print this message\n");
 	printf("    -i, --install: install eokan_svc service.\n");
 	printf("    -r, --remove: remove eokan_svc service.\n");
+	printf("    -u, --umount: umount a filesystem.\n");
 	printf("    -d, --disk: disk type [vmdk, physical]\n");
 	printf("    -p, --part: disk partition number, 1, 2, 3 ...\n");
 	printf("    disk_path: is vmdk file path or physical disk path. like:\n\t(\\\\.\\PhysicalDrive0 or \\\\.\\PhysicalDrive1, ...)\n");
@@ -136,18 +154,19 @@ int main(int argc, char *argv[])
 	filesys_t  fs;
 	int part = 1;
 	part_descr_t partition;
-	const char *disk_type = "vmdk";
-	int iflag = 0, rflag = 0;
+	const char *disk_type = "physical";
+	int iflag = 0, rflag = 0, uflag = 0;
 	const struct option long_options[] = {
 		{"help", no_argument, NULL, 'h'},
 		{"disk", required_argument, NULL, 'd'},
 		{"part", required_argument, NULL, 'p'},
 		{"install", no_argument, NULL, 'i'},
 		{"remove", no_argument, NULL, 'r'},
+		{"umount", required_argument, NULL, 'u'},
 		{NULL, 0, NULL, 0}
 	};
 
-	while ((c = getopt_long(argc, argv, "hird:p:", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "hird:p:u:", long_options, NULL)) != -1) {
 		switch (c) {
 			case 'h':
 				print_usage();
@@ -164,6 +183,10 @@ int main(int argc, char *argv[])
 			case 'r':
 				rflag = 1;
 				break;
+			case 'u':
+				uflag = optarg[0];
+				printf("uflag: %c, %s\n", uflag, optarg);
+				break;
 		};
 	}
 
@@ -176,31 +199,46 @@ int main(int argc, char *argv[])
 	if (rflag) {
 		return eokan_svc_remove();
 	}
+	if (uflag) {
+		int e;
+		eokan_load(0);
+		e = eokan_umount(uflag);
+		eokan_unload();
+		return e;
+	}
 	if (argc <= 0) {
 		print_usage();
 		exit(-1);
 	}
+	if (eokan_load(0) < 0) {
+		return -1;
+	}
+
 	disk = disk_open(disk_type, argv[0], DISK_FLAG_READ);
 	if (!disk) {
 		printf("can't open disk: %s %s\n", disk_type, argv[0]);
-		exit(-1);
+		retval = -1;
+		goto done;
 	}
 	partition = disk_get_partition(disk, part);
 	if (!partition) {
 		printf("can't find partition: %d\n", part);
-		disk_close(disk);
-		exit(-2);
-	}
-    printf("parition: %d, offset: %I64u, length: %I64u\n", part, partition->off, partition->length);
-	if ((fs = vfs_mount(partition)) == NULL) {
-		retval = -1;
+		retval = -2;
 		goto skip;
 	}
-	eokan_main(fs);
-    vfs_umount(fs);
- skip:
+	printf("parition: %d, offset: %I64u, length: %I64u\n", part, partition->off, partition->length);
+	if ((fs = vfs_mount(partition)) == NULL) {
+		retval = -3;
+		part_close(partition);
+		goto skip;
+	}
+	eokan_main(fs, find_valid_drive('C'));
+	vfs_umount(fs);
 	part_close(partition);
+skip:
 	disk_close(disk);
-	return 0;
+done:
+	eokan_unload();
+	return retval;
 }
 

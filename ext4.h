@@ -102,6 +102,10 @@ struct ext_filesystem {
 	uint32_t no_blkgrp;
 	/* No of blocks required for bgdtable */
 	uint32_t no_blk_pergdt;
+	/* save info */
+	uint32_t total_blocks;
+	uint32_t free_blocks;
+	uint32_t block_size; /* in bytes */
 	/* Superblock */
 	struct ext2_sblock *sb;
 	/* Block group descritpor table */

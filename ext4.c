@@ -821,9 +821,9 @@ static int ext4fs_find_file1(const char *currpath,
 				ext4fs_free_node(oldnode, currroot);
 				return 0;
 			}
-
+#ifdef DEBUG
 			printf("Got symlink >%s<\n", symlink);
-
+#endif
 			if (symlink[0] == '/') {
 				ext4fs_free_node(oldnode, currroot);
 				oldnode = &fs->ext4fs_root->diropen;
@@ -983,6 +983,14 @@ static struct filesys_spec *ext4fs_mount(part_descr_t part)
 	if ((data->sblock.magic) != EXT2_MAGIC)
 		goto fail;
 
+
+	fs->total_blocks = data->sblock.total_blocks;
+	fs->free_blocks = data->sblock.free_blocks;
+	fs->block_size = (1024 << data->sblock.log2_block_size);
+
+	fprintf(stderr, "total_block: %u, free_blocks: %u, block_size: %d\n", fs->total_blocks,
+		fs->free_blocks, fs->block_size);
+
 	if ((data->sblock.revision_level == 0))
 		fs->inodesz = 128;
 	else
@@ -1049,11 +1057,26 @@ static int ext4fs_label(struct filesys_spec *fsys, char *buf, int buflen)
 	return nsize > buflen ? buflen : nsize;
 }
 
+static int ext4fs_fsstat(struct filesys_spec *fsys, struct xfsstat *stbuf)
+{
+	struct ext2_sblock *sbp;
+	struct ext_filesystem *fs = &fsys->extfs;
+
+	sbp = &fs->ext4fs_root->sblock;
+
+	stbuf->total_avail = fs->dev_desc->length * SECTOR_SIZE;
+
+	stbuf->total_size = (uint64_t)fs->total_blocks * (uint64_t)fs->block_size;
+	stbuf->free_size = (uint64_t)fs->free_blocks * (uint64_t)fs->block_size;
+	return 0;
+}
+
 struct filesys_operations extfs_operations = {
 	.mount       = ext4fs_mount,
 	.dir_iterate = ext4fs_list_files,
 	.umount      = ext4fs_umount,
 	.open        = ext4fs_open,
+	.fsstat      = ext4fs_fsstat,
 	.label       = ext4fs_label,
 };
 

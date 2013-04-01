@@ -147,6 +147,11 @@ int vfs_label(filesys_t fsys, char *buf, int size)
 	return fsys->fs_ops->label(fsys->fs_data, buf, size);
 }
 
+int vfs_stat(filesys_t fsys, struct xfsstat *st)
+{
+	return fsys->fs_ops->fsstat(fsys->fs_data,st);
+}
+
 file_entry_t vfs_open(filesys_t fs, const char *dir)
 {
 	return fs->fs_ops->open(fs->fs_data, dir);

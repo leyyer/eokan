@@ -33,6 +33,9 @@
 
 static BOOL g_UseStdErr;
 static BOOL g_DebugMode;
+HINSTANCE libdokan;
+static int DOKANAPI (*dokan_main_ptr)(PDOKAN_OPTIONS	DokanOptions, PDOKAN_OPERATIONS DokanOperations);
+static BOOL DOKANAPI (*dokan_umount_ptr)(LPCWSTR);
 
 static void DbgPrint(LPCWSTR format, ...)
 {
@@ -409,6 +412,21 @@ static int __SetFileSecurity(
 {
 	return 0;
 }
+static int __GetDiskFreeSpace (
+		PULONGLONG free_bytes_avl, // FreeBytesAvailable
+		PULONGLONG total_bytes, // TotalNumberOfBytes
+		PULONGLONG free_bytes, // TotalNumberOfFreeBytes
+		PDOKAN_FILE_INFO fino)
+{
+	struct xfsstat st;
+
+	filesys_t fs = (filesys_t)fino->DokanOptions->GlobalContext;
+	vfs_stat(fs, &st);
+	*total_bytes = st.total_avail;
+	*free_bytes_avl = st.free_size;
+	*free_bytes = *free_bytes_avl;
+	return 0;
+}
 
 static int __GetVolumeInformation(
 	LPWSTR		VolumeNameBuffer,
@@ -446,34 +464,59 @@ static int __Unmount(
 	return 0;
 }
 
-
-int eokan_main(filesys_t fs)
+/* initialize dokan library */
+int eokan_load(int debug)
 {
-	int status;
-	WCHAR wmount_point[MAX_PATH];
-	char mount_point[16] = " :";
-	int ch = 'C';
-	DOKAN_OPERATIONS doperations;
-	PDOKAN_OPERATIONS dokanOperations = &doperations;
-	DOKAN_OPTIONS doptions;
-	PDOKAN_OPTIONS dokanOptions = &doptions;
-	HINSTANCE libdokan;
-	int DOKANAPI (*dokan_main)(PDOKAN_OPTIONS	DokanOptions, PDOKAN_OPERATIONS DokanOperations);
+	g_DebugMode = debug;
+	g_UseStdErr = debug;
 
 	libdokan = LoadLibrary(L"dokan.dll");
 	if (libdokan == NULL) {
 		fwprintf(stderr, L"Please install dokan library. please see:\n\thttp://dokan-dev.net/en/");
 		return -1;
 	}
-	dokan_main = (void *)GetProcAddress(libdokan, "DokanMain");
-	if (dokan_main == NULL) {
+	dokan_main_ptr = (void *)GetProcAddress(libdokan, "DokanMain");
+	if (dokan_main_ptr == NULL) {
 		fwprintf(stderr, L"can't load DokanMain\n");
-		FreeLibrary(libdokan);
-		return -1;
+		goto freeit;
 	}
+	dokan_umount_ptr = (void *)GetProcAddress(libdokan, "DokanRemoveMountPoint");
+	if (dokan_umount_ptr == NULL) {
+		fwprintf(stderr, L"can't load DokanMain\n");
+		goto freeit;
+	}
+	return 0;
+freeit:
+	FreeLibrary(libdokan);
+	libdokan = NULL;
+	return -1;
+}
 
-	g_DebugMode = FALSE;
-	g_UseStdErr = FALSE;
+void eokan_unload()
+{
+	if (libdokan) {
+		FreeLibrary(libdokan);
+	}
+}
+
+int eokan_umount(int c)
+{
+	WCHAR wmount_point[MAX_PATH];
+	char mount_point[16] = " :";
+	mount_point[0] = c;
+	utf8_to_utf16(mount_point, strlen(mount_point), wmount_point, MAX_PATH);
+	return dokan_umount_ptr(wmount_point);
+}
+
+int eokan_main(filesys_t fs, int drive)
+{
+	int status;
+	WCHAR wmount_point[MAX_PATH];
+	char mount_point[16] = " :";
+	DOKAN_OPERATIONS doperations;
+	PDOKAN_OPERATIONS dokanOperations = &doperations;
+	DOKAN_OPTIONS doptions;
+	PDOKAN_OPTIONS dokanOptions = &doptions;
 
 	memset(dokanOptions, 0, sizeof *dokanOptions);
 	dokanOptions->Version = DOKAN_VERSION;
@@ -514,21 +557,14 @@ int eokan_main(filesys_t fs)
 	dokanOperations->SetFileSecurity       = __SetFileSecurity;
 	dokanOperations->GetVolumeInformation  = __GetVolumeInformation;
 	dokanOperations->Unmount               = __Unmount;
-	dokanOperations->GetDiskFreeSpace      = NULL;
+	dokanOperations->GetDiskFreeSpace      = __GetDiskFreeSpace;
 	dokanOperations->FindFilesWithPattern  = NULL;
 	dokanOptions->MountPoint = wmount_point;
-retry:
-	ch += 1;
-	if (ch > 'Z') {
-		goto skip;
-	}
-	mount_point[0] = ch;
+
+	mount_point[0] = drive;
 	utf8_to_utf16(mount_point, strlen(mount_point), wmount_point, MAX_PATH);
-	status = dokan_main(dokanOptions, dokanOperations);
-	if (status == DOKAN_MOUNT_ERROR) {
-		goto retry;
-	}
-skip:
+	status = dokan_main_ptr(dokanOptions, dokanOperations);
+
 	switch (status) {
 	case DOKAN_SUCCESS:
 		fprintf(stderr, "Success\n");
@@ -555,7 +591,6 @@ skip:
 		fprintf(stderr, "Unknown error: %d\n", status);
 		break;
 	}
-	FreeLibrary(libdokan);
 	return 0;
 }
 
