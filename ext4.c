@@ -52,6 +52,9 @@ static struct ext4_extent_header *ext4fs_get_extent_block(
 static void ext4fs_free_node(struct ext2fs_node *node, struct ext2fs_node *currroot)
 {
 	struct ext_filesystem *fs = get_fs();
+	if (!node) {
+		return;
+	}
 	if ((node != &fs->ext4fs_root->diropen) && (node != currroot)) {
 		free(node->indir1_block);
 		free(node->indir2_block);
@@ -703,6 +706,7 @@ static int ext4fs_iterate_dir(struct ext_filesystem *fs, struct ext2fs_node *dir
                 if (dir_func) {
                     st.atime = fdiro->inode.atime;
                     st.ctime = fdiro->inode.ctime;
+					st.mtime = fdiro->inode.mtime;
                     st.dtime = fdiro->inode.dtime;
                     st.mode  = fdiro->inode.mode;
                     st.size  = fdiro->inode.size;
@@ -850,7 +854,7 @@ static int ext4fs_find_file1(const char *currpath,
 	return -1;
 }
 
-int ext4fs_find_file(const char *path, struct ext2fs_node *rootnode,
+static int ext4fs_find_file(const char *path, struct ext2fs_node *rootnode,
 	struct ext2fs_node **foundnode, int expecttype)
 {
 	int status;
@@ -874,13 +878,13 @@ int ext4fs_find_file(const char *path, struct ext2fs_node *rootnode,
 	return 1;
 }
 
-static int ext4fs_file_entry_read(struct file_entry *file, struct filesys_spec *fsys, char *buf, unsigned len)
+static int ext4fs_file_entry_read(struct file_entry *file, struct filesys_spec *fsys, int offset, char *buf, unsigned len)
 {
 	struct ext2fs_file_entry *filp = (struct ext2fs_file_entry *)file;
 
 	if (!fsys || !filp)
 		return 0;
-	return ext4fs_read_file(&fsys->extfs, filp->ext4fs_file, 0, len, buf);
+	return ext4fs_read_file(&fsys->extfs, filp->ext4fs_file, offset, len, buf);
 }
 
 static int ext4fs_file_entry_close(struct file_entry *filp, struct filesys_spec *fsys)
@@ -893,6 +897,21 @@ static int ext4fs_file_entry_close(struct file_entry *filp, struct filesys_spec 
 	return 0;
 }
 
+static int ext4fs_file_entry_stat(struct file_entry *filp, struct filesys_spec *fsys, struct xstat *st)
+{
+	struct ext2fs_file_entry *file = (struct ext2fs_file_entry *)filp;
+	struct ext_filesystem *fs = &fsys->extfs;
+
+	st->mtime = file->ext4fs_file->inode.mtime;
+	st->atime = file->ext4fs_file->inode.atime;
+	st->mode  = file->ext4fs_file->inode.mode;
+	st->ctime = file->ext4fs_file->inode.ctime;
+	st->dtime = file->ext4fs_file->inode.dtime;
+	st->size = file->ext4fs_file->inode.size;
+	st->size_high= file->ext4fs_file->inode.dir_acl;
+	return 0;
+}
+
 struct ext2fs_file_entry *
 __alloc_ext2fs_entry(struct ext2fs_node * node)
 {
@@ -900,6 +919,7 @@ __alloc_ext2fs_entry(struct ext2fs_node * node)
 
 	filp->base.read = ext4fs_file_entry_read;
 	filp->base.close = ext4fs_file_entry_close;
+	filp->base.stat = ext4fs_file_entry_stat;
 	filp->ext4fs_file = node;
 	return filp;
 }
@@ -929,7 +949,8 @@ ext4fs_open(struct filesys_spec *fsys, const char *filename)
 
 	return &filp->base;
 fail:
-	ext4fs_free_node(fdiro, &fs->ext4fs_root->diropen);
+	if (fdiro)
+		ext4fs_free_node(fdiro, &fs->ext4fs_root->diropen);
 
 	return NULL;
 }
@@ -1008,10 +1029,31 @@ static int ext4fs_list_files(struct filesys_spec *fsys, const char *dirname, dir
 	return 0;
 }
 
+static int ext4fs_label(struct filesys_spec *fsys, char *buf, int buflen)
+{
+	struct ext_filesystem *fs = &fsys->extfs;
+	int nsize = 0;
+	uint32_t *ep;
+	struct ext2_sblock *sbp;
+
+	sbp = fs->sb;
+	if (!sbp) {
+		sbp = &fs->ext4fs_root->sblock;
+	}
+	if (sbp->volume_name[0] != '\0') {
+		nsize = snprintf(buf, buflen, "%s", sbp->volume_name);
+	} else {
+		ep = sbp->unique_id;
+		nsize = snprintf(buf, buflen, "%04X-%04X-%04X-%04X",*ep, *(ep+1), *(ep+2), *(ep+3));
+	}
+	return nsize > buflen ? buflen : nsize;
+}
+
 struct filesys_operations extfs_operations = {
-	.mount  = ext4fs_mount,
+	.mount       = ext4fs_mount,
 	.dir_iterate = ext4fs_list_files,
-	.umount = ext4fs_umount,
-	.open = ext4fs_open,
+	.umount      = ext4fs_umount,
+	.open        = ext4fs_open,
+	.label       = ext4fs_label,
 };
 

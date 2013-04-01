@@ -133,8 +133,6 @@ static inline void *zalloc(size_t size)
 
 int ext4fs_read_inode(struct ext_filesystem *, struct ext2_data *data, int ino,
 		      struct ext2_inode *inode);
-int ext4fs_find_file(const char *path, struct ext2fs_node *rootnode,
-			struct ext2fs_node **foundnode, int expecttype);
 struct ext_filesystem *get_fs(void);
 
 #endif

@@ -96,8 +96,6 @@ int __stdcall eokan_svc_remove(void)
         return -1;
     }
 
-    // Get a handle to the service.
-
     schService = OpenService(
         schSCManager,       // SCM database
         EOKAN_SVCNAME,      // name of service

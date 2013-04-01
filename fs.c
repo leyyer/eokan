@@ -142,3 +142,28 @@ int vfs_umount(filesys_t fsys)
 	return x;
 }
 
+int vfs_label(filesys_t fsys, char *buf, int size)
+{
+	return fsys->fs_ops->label(fsys->fs_data, buf, size);
+}
+
+file_entry_t vfs_open(filesys_t fs, const char *dir)
+{
+	return fs->fs_ops->open(fs->fs_data, dir);
+}
+
+int vfs_file_read(file_entry_t filp, filesys_t fs, int offset, char *buf, unsigned len)
+{
+	return filp->read(filp, fs->fs_data, offset,  buf, len);
+}
+
+int vfs_file_close(file_entry_t filp, filesys_t fs)
+{
+	return filp->close(filp, fs->fs_data);
+}
+
+int vfs_file_stat(file_entry_t filp, filesys_t fs, struct xstat *st)
+{
+	return filp->stat(filp, fs->fs_data, st);
+}
+

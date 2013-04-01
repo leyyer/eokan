@@ -31,7 +31,6 @@
 #include "util.h"
 #include "fs.h"
 
-static WCHAR MountPoint[MAX_PATH] = L"M:";
 static BOOL g_UseStdErr;
 static BOOL g_DebugMode;
 
@@ -76,9 +75,9 @@ static int __CreateFile(
 	DWORD					FlagsAndAttributes,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
-	WCHAR filePath[MAX_PATH];
-	HANDLE handle = NULL;
-	DWORD fileAttr;
+	char filePath[MAX_PATH];
+	filesys_t fs = (filesys_t)DokanFileInfo->DokanOptions->GlobalContext;
+	file_entry_t filp = NULL;
 
 	DbgPrint(L"CreateFile : %s\n", FileName);
 
@@ -95,8 +94,12 @@ static int __CreateFile(
 
 	DbgPrint(L"\tShareMode = 0x%x\n", ShareMode);
 
+	if (!DokanFileInfo->IsDirectory) {
+		GetFilePath(filePath, MAX_PATH, FileName);
+		filp = vfs_open(fs, filePath);
+	}
 	// save the file handle in Context
-	DokanFileInfo->Context = (ULONG64)handle;
+	DokanFileInfo->Context = (ULONG64)filp;
 	return 0;
 }
 
@@ -128,6 +131,12 @@ static int __CloseFile(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
+	filesys_t fs = (filesys_t) DokanFileInfo->DokanOptions->GlobalContext;
+	file_entry_t filp = (file_entry_t)DokanFileInfo->Context;
+	if (filp) {
+		vfs_file_close(filp, fs);
+		DokanFileInfo->Context = 0;
+	}
 	return 0;
 }
 
@@ -136,7 +145,6 @@ static int __Cleanup(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
-	DokanFileInfo->Context = 0;
 	return 0;
 }
 
@@ -149,10 +157,14 @@ static int __ReadFile(
 	LONGLONG			Offset,
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
-	WCHAR	filePath[MAX_PATH];
-	HANDLE	handle = (HANDLE)DokanFileInfo->Context;
-	ULONG	offset = (ULONG)Offset;
-	BOOL	opened = FALSE;
+	int nrd = 0;
+	filesys_t fs = (filesys_t)DokanFileInfo->DokanOptions->GlobalContext;
+	file_entry_t filp = (file_entry_t)DokanFileInfo->Context;
+
+	if (filp) {
+		nrd = vfs_file_read(filp, fs, Offset, Buffer, BufferLength);
+		*ReadLength = nrd;
+	}
 
 	DbgPrint(L"ReadFile : %s\n", FileName);
 
@@ -190,16 +202,37 @@ static int __FlushFileBuffers(
 
 	return 0;
 }
-
+#if 0
+typedef struct _BY_HANDLE_FILE_INFORMATION {
+  DWORD    dwFileAttributes;
+  FILETIME ftCreationTime;
+  FILETIME ftLastAccessTime;
+  FILETIME ftLastWriteTime;
+  DWORD    dwVolumeSerialNumber;
+  DWORD    nFileSizeHigh;
+  DWORD    nFileSizeLow;
+  DWORD    nNumberOfLinks;
+  DWORD    nFileIndexHigh;
+  DWORD    nFileIndexLow;
+} BY_HANDLE_FILE_INFORMATION, *PBY_HANDLE_FILE_INFORMATION;
+#endif
 
 static int __GetFileInformation(
 	LPCWSTR							FileName,
 	LPBY_HANDLE_FILE_INFORMATION	HandleFileInformation,
 	PDOKAN_FILE_INFO				DokanFileInfo)
 {
-	WCHAR	filePath[MAX_PATH];
-	HANDLE	handle = (HANDLE)DokanFileInfo->Context;
-	BOOL	opened = FALSE;
+	filesys_t fs = (filesys_t)DokanFileInfo->DokanOptions->GlobalContext;
+	file_entry_t filp = (file_entry_t)DokanFileInfo->Context;
+	struct xstat stbuf;
+
+	if (filp) {
+		memset(&stbuf, 0, sizeof stbuf);
+		vfs_file_stat(filp, fs, &stbuf);
+		HandleFileInformation->dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+		HandleFileInformation->nFileSizeLow = stbuf.size;
+		HandleFileInformation->nFileSizeHigh = stbuf.size_high;
+	}
 
 	DbgPrint(L"GetFileInfo : %s\n", FileName);
 	return 0;
@@ -235,9 +268,12 @@ static int list_all_files(void *data, const char *name, struct xstat *st, int is
 		dw.dwFileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
 	}
 	utf8_to_utf16(path, strlen(path), dw.cFileName, MAX_PATH);
-	wprintf(L"list_files: %s\n", dw.cFileName);
+/*	wprintf(L"list_files: %s\n", dw.cFileName); */
 	dw.nFileSizeHigh = st->size_high;
 	dw.nFileSizeLow  = st->size;
+	dw.ftLastAccessTime.dwLowDateTime = st->atime;
+	dw.ftLastWriteTime.dwLowDateTime = st->mtime;
+	dw.ftCreationTime.dwLowDateTime = st->ctime;
 	fdp->fill_find(&dw, fdp->finfo);
 	return 0;
 }
@@ -252,7 +288,7 @@ static int __FindFiles(LPCWSTR	FileName, PFillFindData	FillFindData /* function 
 
 	GetFilePath(filePath, sizeof filePath, FileName);
 
-	DbgPrint(L"FindFiles :%s -> %s\n", FileName, filePath);
+	//DbgPrint(L"FindFiles :%s -> %s\n", FileName, filePath);
 	find_data.fill_find = FillFindData;
 	find_data.finfo = DokanFileInfo;
 
@@ -384,9 +420,13 @@ static int __GetVolumeInformation(
 	DWORD		FileSystemNameSize,
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
-	const char *label = "linuxfs";
+	char vname[MAX_PATH] = {0}, *ep = vname;
+	filesys_t fs = (filesys_t)DokanFileInfo->DokanOptions->GlobalContext;
 
-	utf8_to_utf16(label, strlen(label), VolumeNameBuffer, VolumeNameSize);
+	if (vfs_label(fs, vname, MAX_PATH) <= 0) {
+		ep = "linuxfs";
+	}
+	utf8_to_utf16(ep, strlen(ep), VolumeNameBuffer, VolumeNameSize);
 	*VolumeSerialNumber = 0x19821215;
 	*MaximumComponentLength = 256;
 	*FileSystemFlags = FILE_CASE_SENSITIVE_SEARCH |
@@ -394,7 +434,7 @@ static int __GetVolumeInformation(
 						FILE_SUPPORTS_REMOTE_STORAGE |
 						FILE_UNICODE_ON_DISK |
 						FILE_PERSISTENT_ACLS;
-	wcscpy_s(FileSystemNameBuffer, FileSystemNameSize / sizeof(WCHAR), L"EXT2FS");
+	wcscpy_s(FileSystemNameBuffer, FileSystemNameSize / sizeof(WCHAR), L"EXT2/3/4");
 
 	return 0;
 }
@@ -410,6 +450,9 @@ static int __Unmount(
 int eokan_main(filesys_t fs)
 {
 	int status;
+	WCHAR wmount_point[MAX_PATH];
+	char mount_point[16] = " :";
+	int ch = 'C';
 	DOKAN_OPERATIONS doperations;
 	PDOKAN_OPERATIONS dokanOperations = &doperations;
 	DOKAN_OPTIONS doptions;
@@ -429,8 +472,8 @@ int eokan_main(filesys_t fs)
 		return -1;
 	}
 
-	g_DebugMode = TRUE;
-	g_UseStdErr = TRUE;
+	g_DebugMode = FALSE;
+	g_UseStdErr = FALSE;
 
 	memset(dokanOptions, 0, sizeof *dokanOptions);
 	dokanOptions->Version = DOKAN_VERSION;
@@ -444,7 +487,7 @@ int eokan_main(filesys_t fs)
 	}
 
 	dokanOptions->Options |= DOKAN_OPTION_KEEP_ALIVE;
-	dokanOptions->MountPoint = MountPoint;
+
 	dokanOptions->GlobalContext = (ULONG64)fs;
 
 	memset(dokanOperations, 0, sizeof *dokanOperations);
@@ -473,8 +516,19 @@ int eokan_main(filesys_t fs)
 	dokanOperations->Unmount               = __Unmount;
 	dokanOperations->GetDiskFreeSpace      = NULL;
 	dokanOperations->FindFilesWithPattern  = NULL;
-
+	dokanOptions->MountPoint = wmount_point;
+retry:
+	ch += 1;
+	if (ch > 'Z') {
+		goto skip;
+	}
+	mount_point[0] = ch;
+	utf8_to_utf16(mount_point, strlen(mount_point), wmount_point, MAX_PATH);
 	status = dokan_main(dokanOptions, dokanOperations);
+	if (status == DOKAN_MOUNT_ERROR) {
+		goto retry;
+	}
+skip:
 	switch (status) {
 	case DOKAN_SUCCESS:
 		fprintf(stderr, "Success\n");
