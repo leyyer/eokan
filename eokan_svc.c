@@ -28,6 +28,9 @@
 #include "fs.h"
 
 #define EOKAN_SVCNAME TEXT("eokan_svc")
+static	SERVICE_STATUS_HANDLE   gSvcStatusHandle;
+static	SERVICE_STATUS			gSvcStatus;
+static  HANDLE                  ghSvcStopEvent = NULL;
 
 static int eokan_svc_install(void)
 {
@@ -79,7 +82,7 @@ static int eokan_svc_install(void)
 	return 0;
 }
 
-int __stdcall eokan_svc_remove(void)
+static int __stdcall eokan_svc_remove(void)
 {
 	SC_HANDLE schSCManager;
 	SC_HANDLE schService;
@@ -118,6 +121,56 @@ int __stdcall eokan_svc_remove(void)
 	return 0;
 }
 
+static void svc_report_event(LPTSTR szFunction)
+{
+	fwprintf(stderr, L"function %s failed.\n", szFunction);
+}
+
+static void report_svc_status(
+		SERVICE_STATUS_HANDLE   gSvcStatusHandle,
+		SERVICE_STATUS			*gSvcStatus,
+		DWORD dwCurrentState,
+		DWORD dwWin32ExitCode,
+		DWORD dwWaitHint)
+{
+	static DWORD dwCheckPoint = 1;
+
+	// Fill in the SERVICE_STATUS structure.
+	gSvcStatus->dwCurrentState = dwCurrentState;
+	gSvcStatus->dwWin32ExitCode = dwWin32ExitCode;
+	gSvcStatus->dwWaitHint = dwWaitHint;
+
+	if (dwCurrentState == SERVICE_START_PENDING)
+		gSvcStatus->dwControlsAccepted = 0;
+	else gSvcStatus->dwControlsAccepted = SERVICE_ACCEPT_STOP;
+
+	if ( (dwCurrentState == SERVICE_RUNNING) ||
+			(dwCurrentState == SERVICE_STOPPED) )
+		gSvcStatus->dwCheckPoint = 0;
+	else gSvcStatus->dwCheckPoint = dwCheckPoint++;
+
+	// Report the status of the service to the SCM.
+	SetServiceStatus(gSvcStatusHandle, gSvcStatus );
+}
+
+static void WINAPI svcctl_handler( DWORD dwCtrl )
+{
+	// Handle the requested control code.
+
+	switch(dwCtrl) {
+		case SERVICE_CONTROL_STOP:
+			report_svc_status(gSvcStatusHandle, &gSvcStatus, SERVICE_STOP_PENDING, NO_ERROR, 0);
+			// Signal the service to stop.
+			SetEvent(ghSvcStopEvent);
+			report_svc_status(gSvcStatusHandle, &gSvcStatus, gSvcStatus.dwCurrentState, NO_ERROR, 0);
+			return;
+		case SERVICE_CONTROL_INTERROGATE:
+			break;
+		default:
+			break;
+	}
+}
+
 static int find_valid_drive(int from)
 {
 	DWORD dflag;
@@ -135,13 +188,124 @@ static int find_valid_drive(int from)
 	return c;
 }
 
+static void create_eokan_process(const char *path, int part)
+{
+	char szPath[MAX_PATH];
+	STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+	char cmdline[MAX_PATH*2];
+
+    ZeroMemory(&si, sizeof(si) );
+
+    si.cb = sizeof(si);
+
+    ZeroMemory( &pi, sizeof(pi) );
+
+	if(!GetModuleFileNameA( NULL, szPath, MAX_PATH )) {
+		printf("can't find module (%d)\n", GetLastError());
+		return;
+	}
+	snprintf(cmdline, sizeof cmdline, "%s -p %d %s", szPath, part, path);
+	if (!CreateProcessA(szPath,cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        printf( "create process failed (%d).\n", GetLastError());
+    }
+}
+
+static void mount_phydisk_parts(void)
+{
+	disk_descr_t dk;
+	filesys_t    fs;
+	part_descr_t partition;
+	const char *disk_type = "physical";
+	int n, k;
+	char path[MAX_PATH];
+
+	if (eokan_load(0) < 0)
+		return;
+	for (n = 0; n < 4; ++n) {
+		snprintf(path, sizeof path, "\\\\.\\PhysicalDrive%d", n);
+		dk = disk_open(disk_type, path, DISK_FLAG_READ);
+		if (!dk)
+			continue;
+		for (k = 0; k < 16 ; ++k) {
+			partition = disk_get_partition(dk,k+1);
+			if (!partition)
+				break;
+			fs = vfs_mount(partition);
+			if (fs) {
+				vfs_umount(fs);
+				create_eokan_process(path, k + 1);
+			}
+			part_close(partition);
+		}
+		disk_close(dk);
+	}
+	eokan_unload();
+}
+
+static void umount_phydisk_parts(void)
+{
+	DWORD dflag;
+	int x, c;
+
+	if (eokan_load(0) < 0)
+		return;
+	dflag = GetLogicalDrives();
+	for (x = 'C' - 'A'; x < 32; ++x) {
+		if (dflag & (1 << x)) {
+			eokan_umount(x + 'A');
+		}
+	}
+	eokan_unload();
+}
+
+static VOID WINAPI eokan_svc_main( DWORD dwArgc, LPTSTR *lpszArgv )
+{
+	// Register the handler function for the service
+	gSvcStatusHandle = RegisterServiceCtrlHandler( EOKAN_SVCNAME, svcctl_handler);
+
+	if( !gSvcStatusHandle ) {
+		svc_report_event(TEXT("RegisterServiceCtrlHandler"));
+		return;
+	}
+
+	// These SERVICE_STATUS members remain as set here
+	gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+	gSvcStatus.dwServiceSpecificExitCode = 0;
+
+	// Report initial status to the SCM
+	report_svc_status(gSvcStatusHandle, &gSvcStatus, SERVICE_START_PENDING, NO_ERROR, 3000 );
+
+	ghSvcStopEvent = CreateEvent( NULL,  TRUE, FALSE, NULL);
+
+	if (ghSvcStopEvent == NULL) {
+		report_svc_status(gSvcStatusHandle, &gSvcStatus, SERVICE_STOPPED, NO_ERROR, 0 );
+		return;
+	}
+
+	mount_phydisk_parts();
+
+	report_svc_status(gSvcStatusHandle, &gSvcStatus, SERVICE_RUNNING, NO_ERROR, 0 );
+
+	/* Report running status when initialization is complete. */
+	/* eokan main */
+	while(1) {
+		WaitForSingleObject(ghSvcStopEvent, INFINITE);
+		break;
+	}
+	umount_phydisk_parts();
+	report_svc_status(gSvcStatusHandle, &gSvcStatus, SERVICE_STOPPED, NO_ERROR, 0 );
+}
+
 static void print_usage()
 {
 	printf("usage: xokan [-h, -d] disk_path\n");
 	printf("    -h, --help: print this message\n");
 	printf("    -i, --install: install eokan_svc service.\n");
 	printf("    -r, --remove: remove eokan_svc service.\n");
+	printf("    -m, --mountpoint: specify mount point drive letter.\n");
 	printf("    -u, --umount: umount a filesystem.\n");
+	printf("    -s, --service: service mode (default this mode).\n");
 	printf("    -d, --disk: disk type [vmdk, physical]\n");
 	printf("    -p, --part: disk partition number, 1, 2, 3 ...\n");
 	printf("    disk_path: is vmdk file path or physical disk path. like:\n\t(\\\\.\\PhysicalDrive0 or \\\\.\\PhysicalDrive1, ...)\n");
@@ -155,7 +319,11 @@ int main(int argc, char *argv[])
 	int part = 1;
 	part_descr_t partition;
 	const char *disk_type = "physical";
-	int iflag = 0, rflag = 0, uflag = 0;
+	int iflag = 0, rflag = 0, uflag = 0, sflag = 0, mflag = 0;
+	SERVICE_TABLE_ENTRY svc_dispatch_table[] = {
+		{EOKAN_SVCNAME, eokan_svc_main},
+		{NULL, NULL}
+	};
 	const struct option long_options[] = {
 		{"help", no_argument, NULL, 'h'},
 		{"disk", required_argument, NULL, 'd'},
@@ -163,10 +331,12 @@ int main(int argc, char *argv[])
 		{"install", no_argument, NULL, 'i'},
 		{"remove", no_argument, NULL, 'r'},
 		{"umount", required_argument, NULL, 'u'},
+		{"mountpoint", required_argument, NULL, 'm'},
+		{"service", no_argument, NULL, 's'},
 		{NULL, 0, NULL, 0}
 	};
 
-	while ((c = getopt_long(argc, argv, "hird:p:u:", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "hird:p:u:sm:", long_options, NULL)) != -1) {
 		switch (c) {
 			case 'h':
 				print_usage();
@@ -185,7 +355,12 @@ int main(int argc, char *argv[])
 				break;
 			case 'u':
 				uflag = optarg[0];
-				printf("uflag: %c, %s\n", uflag, optarg);
+				break;
+			case 's':
+				sflag = 1;
+				break;
+			case 'm':
+				mflag = optarg[0];
 				break;
 		};
 	}
@@ -206,9 +381,11 @@ int main(int argc, char *argv[])
 		eokan_unload();
 		return e;
 	}
-	if (argc <= 0) {
-		print_usage();
-		exit(-1);
+	if (sflag || argc <= 0) {
+		if (!StartServiceCtrlDispatcher(svc_dispatch_table)) {
+			svc_report_event(TEXT("StartServiceCtrlDispatcher"));
+		}
+		return 0;
 	}
 	if (eokan_load(0) < 0) {
 		return -1;
@@ -232,7 +409,7 @@ int main(int argc, char *argv[])
 		part_close(partition);
 		goto skip;
 	}
-	eokan_main(fs, find_valid_drive('C'));
+	eokan_main(fs, mflag ? mflag : find_valid_drive('C'));
 	vfs_umount(fs);
 	part_close(partition);
 skip:

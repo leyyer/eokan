@@ -113,8 +113,9 @@ static int phy_disk_create(disk_descr_t disk, const char *path, uint32_t flags)
 
 	utf8_to_utf16((const unsigned char *)path, strlen(path), xpath, MAX_PATH);
 	phy->hFile= CreateFile(xpath, f0, f1, NULL, OPEN_EXISTING, 0, NULL);
+	fwprintf(stderr, L"open_phy: %s\n", xpath);
 	if (phy->hFile == INVALID_HANDLE_VALUE) {
-		fwprintf(stderr, L"can't open device: %s [%d]", xpath, GetLastError());
+		fwprintf(stderr, L"can't open device: %s [%d]\n", xpath, GetLastError());
 		return -1;
 	}
 	phy_get_info(phy);

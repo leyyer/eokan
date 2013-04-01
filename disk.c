@@ -1,31 +1,38 @@
-/* 
+/*
  * Copyright (c) 2013, Renyi su <surenyi@gmail.com> All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without modification, 
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
- * Redistributions of source code must retain the above copyright notice, this list 
- * of conditions and the following disclaimer. Redistributions in binary form must 
- * reproduce the above copyright notice, this list of conditions and the following 
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer. Redistributions in binary form must
+ * reproduce the above copyright notice, this list of conditions and the following
  * disclaimer in the documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
- * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+#include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include "disk.h"
 
+struct disk_dev {
+	CRITICAL_SECTION lock;
+	unsigned char disk_descr[1];
+};
+
+#define GET_DISKDEV(dk) ((struct disk_dev *)((unsigned char *)dk - offsetof(struct disk_dev, disk_descr)))
 extern struct disk_probe_spec vmdk_disk_spec;
 extern struct disk_probe_spec phy_disk_spec;
 
@@ -40,14 +47,17 @@ disk_descr_t disk_open(const char *type, const char *path, uint32_t flags)
 	int x = 0;
 	struct disk_probe_spec *dp;
 	disk_descr_t disk = NULL;
+	struct disk_dev *ddev;
 
 	while (disks[x]) {
 		dp = disks[x];
 		if (strncasecmp(dp->name, type, strlen(type)) == 0) {
-			disk = calloc(1, dp->size);
-			if (disk) {
+			ddev = calloc(1, sizeof *ddev + dp->size);
+			if (ddev) {
+				disk = (disk_descr_t)ddev->disk_descr;
+				InitializeCriticalSection(&ddev->lock);
 				if (dp->probe(disk, path, flags) < 0) {
-					free(disk);
+					free(ddev);
 					disk = NULL;
 				}
 			}
@@ -60,18 +70,30 @@ disk_descr_t disk_open(const char *type, const char *path, uint32_t flags)
 
 void disk_close(disk_descr_t disk)
 {
+	struct disk_dev *ddk = GET_DISKDEV(disk);
 	disk->release(disk);
-	free(disk);
+	DeleteCriticalSection(&ddk->lock);
+	free(ddk);
 }
 
 int disk_read(disk_descr_t disk, int64_t start, int64_t num, uint8_t *buf)
 {
-	return disk->read(disk, start, num, buf);
+	int x;
+	struct disk_dev *ddk = GET_DISKDEV(disk);
+	EnterCriticalSection(&ddk->lock);
+	x= disk->read(disk, start, num, buf);
+	LeaveCriticalSection(&ddk->lock);
+	return x;
 }
 
 int disk_write(disk_descr_t disk, int64_t start, int64_t num, const uint8_t *buf)
 {
-	return disk->write(disk, start, num, buf);
+	int x;
+	struct disk_dev *ddk = GET_DISKDEV(disk);
+	EnterCriticalSection(&ddk->lock);
+	x= disk->write(disk, start, num, buf);
+	LeaveCriticalSection(&ddk->lock);
+	return x;
 }
 
 static part_descr_t __alloc_partition(disk_descr_t disk, uint64_t off, uint64_t len)
