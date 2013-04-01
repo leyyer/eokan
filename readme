@@ -1,0 +1,3 @@
+EXT2/3/4 userspace filesystem. If you install vmware's vddk, The program can
+mount vmdk disk files already. 
+More features lost, I'm working progress the progject. 
