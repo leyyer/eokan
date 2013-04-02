@@ -1,3 +1,9 @@
 EXT2/3/4 userspace filesystem. If you install vmware's vddk, The program can
 mount vmdk disk files already. 
 More features lost, I'm working progress on the project. 
+How to build ?
+1. Install dokan library. Please see:  http://dokan-dev.net/en/2011/01/10/dokan-library-0-6-0-released/.
+2. Install vmware vddk (optional, support vmware vmdk file).
+3. Install mingw32/mingw64 compiler.
+4. Type `make` build eokan.exe
+5. `eokan.exe -h` display how to use the program.
