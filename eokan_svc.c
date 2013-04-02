@@ -26,6 +26,7 @@
 #include <getopt.h>
 #include "disk.h"
 #include "fs.h"
+#include "util.h"
 
 #define EOKAN_SVCNAME TEXT("eokan_svc")
 static	SERVICE_STATUS_HANDLE   gSvcStatusHandle;
@@ -39,7 +40,7 @@ static int eokan_svc_install(void)
 	TCHAR szPath[MAX_PATH];
 
 	if(!GetModuleFileName( NULL, szPath, MAX_PATH )) {
-		printf("Cannot install service (%d)\n", GetLastError());
+		printf("Cannot install service (%lu)\n", GetLastError());
 		return -1;
 	}
 
@@ -50,7 +51,7 @@ static int eokan_svc_install(void)
 			SC_MANAGER_ALL_ACCESS);  /* full access rights */
 
 	if (NULL == schSCManager) {
-		printf("OpenSCManager failed (%d)\n", GetLastError());
+		printf("OpenSCManager failed (%lu)\n", GetLastError());
 		return -1;
 	}
 
@@ -71,7 +72,7 @@ static int eokan_svc_install(void)
 			NULL);                     // no password
 
 	if (schService == NULL){
-		printf("CreateService failed (%d)\n", GetLastError());
+		printf("CreateService failed (%lu)\n", GetLastError());
 		CloseServiceHandle(schSCManager);
 		return -2;
 	} else {
@@ -181,7 +182,7 @@ static void __stdcall do_stop_eokansvc(SC_HANDLE schSCManager, SC_HANDLE schServ
             sizeof(SERVICE_STATUS_PROCESS),
             &dwBytesNeeded ) )
     {
-        printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+        printf("QueryServiceStatusEx failed (%lu)\n", GetLastError());
         goto stop_cleanup;
     }
 
@@ -217,7 +218,7 @@ static void __stdcall do_stop_eokansvc(SC_HANDLE schSCManager, SC_HANDLE schServ
                  sizeof(SERVICE_STATUS_PROCESS),
                  &dwBytesNeeded ) )
         {
-            printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+            printf("QueryServiceStatusEx failed (%lu)\n", GetLastError());
             goto stop_cleanup;
         }
 
@@ -243,7 +244,7 @@ static void __stdcall do_stop_eokansvc(SC_HANDLE schSCManager, SC_HANDLE schServ
             schService,
             SERVICE_CONTROL_STOP,
             (LPSERVICE_STATUS) &ssp ) ) {
-        printf( "ControlService failed (%d)\n", GetLastError() );
+        printf( "ControlService failed (%lu)\n", GetLastError() );
         goto stop_cleanup;
     }
 
@@ -257,7 +258,7 @@ static void __stdcall do_stop_eokansvc(SC_HANDLE schSCManager, SC_HANDLE schServ
                 (LPBYTE)&ssp,
                 sizeof(SERVICE_STATUS_PROCESS),
                 &dwBytesNeeded ) ) {
-            printf( "QueryServiceStatusEx failed (%d)\n", GetLastError() );
+            printf( "QueryServiceStatusEx failed (%lu)\n", GetLastError() );
             goto stop_cleanup;
         }
 
@@ -279,7 +280,6 @@ static int __stdcall eokan_svc_remove(void)
 {
 	SC_HANDLE schSCManager;
 	SC_HANDLE schService;
-	SERVICE_STATUS ssStatus;
 
 	// Get a handle to the SCM database.
 	schSCManager = OpenSCManager(
@@ -288,7 +288,7 @@ static int __stdcall eokan_svc_remove(void)
 			SC_MANAGER_ALL_ACCESS);  // full access rights
 
 	if (NULL == schSCManager) {
-		printf("OpenSCManager failed (%d)\n", GetLastError());
+		printf("OpenSCManager failed (%lu)\n", GetLastError());
 		return -1;
 	}
 
@@ -298,7 +298,7 @@ static int __stdcall eokan_svc_remove(void)
 			DELETE);            // need delete access
 
 	if (schService == NULL){
-		printf("OpenService failed (%d)\n", GetLastError());
+		printf("OpenService failed (%lu)\n", GetLastError());
 		CloseServiceHandle(schSCManager);
 		return -2;
 	}
@@ -307,7 +307,7 @@ static int __stdcall eokan_svc_remove(void)
 
 	// Delete the service.
 	if (! DeleteService(schService)) {
-		printf("DeleteService failed (%d)\n", GetLastError());
+		printf("DeleteService failed (%lu)\n", GetLastError());
 	}
 	else printf("Service deleted successfully\n");
 
@@ -397,12 +397,12 @@ static void create_eokan_process(const char *path, int part)
     ZeroMemory( &pi, sizeof(pi) );
 
 	if(!GetModuleFileNameA( NULL, szPath, MAX_PATH )) {
-		printf("can't find module (%d)\n", GetLastError());
+		printf("can't find module (%lu)\n", GetLastError());
 		return;
 	}
 	snprintf(cmdline, sizeof cmdline, "%s -p %d %s", szPath, part, path);
 	if (!CreateProcessA(szPath,cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        printf( "create process failed (%d).\n", GetLastError());
+        printf( "create process failed (%lu).\n", GetLastError());
     }
 }
 
@@ -441,7 +441,7 @@ static void mount_phydisk_parts(void)
 static void umount_phydisk_parts(void)
 {
 	DWORD dflag;
-	int x, c;
+	int x;
 
 	if (eokan_load(0) < 0)
 		return;

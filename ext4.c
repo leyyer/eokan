@@ -38,20 +38,13 @@ struct ext2fs_file_entry {
 	struct ext2fs_node *ext4fs_file;
 };
 
-struct ext_filesystem ext_fs;
-
-struct ext_filesystem *get_fs(void)
-{
-	return &ext_fs;
-}
-static struct ext4_extent_header *ext4fs_get_extent_block(
+static struct ext4_extent_header *ext4fs_get_extent_block(struct ext_filesystem *fs,
 	struct ext2_data *data, char *buf,
 		struct ext4_extent_header *ext_block,
 		uint32_t fileblock, int log2_blksz);
 
-static void ext4fs_free_node(struct ext2fs_node *node, struct ext2fs_node *currroot)
+static void ext4fs_free_node(struct ext_filesystem *fs, struct ext2fs_node *node, struct ext2fs_node *currroot)
 {
-	struct ext_filesystem *fs = get_fs();
 	if (!node) {
 		return;
 	}
@@ -63,7 +56,7 @@ static void ext4fs_free_node(struct ext2fs_node *node, struct ext2fs_node *currr
 	}
 }
 
-long int read_allocated_block1(struct ext2fs_node *fsinode, int fileblock)
+long int read_allocated_block1(struct ext_filesystem *fs, struct ext2fs_node *fsinode, int fileblock)
 {
 	long int blknr;
 	int blksz;
@@ -73,7 +66,6 @@ long int read_allocated_block1(struct ext2fs_node *fsinode, int fileblock)
 	long int perblock_parent;
 	long int perblock_child;
 	unsigned long long start;
-	struct ext_filesystem *fs = get_fs();
 	struct ext2_inode *inode = &fsinode->inode;
 
 	/* get the blocksize of the filesystem */
@@ -86,7 +78,7 @@ long int read_allocated_block1(struct ext2fs_node *fsinode, int fileblock)
 		struct ext4_extent_header *ext_block;
 		struct ext4_extent *extent;
 		int i = -1;
-		ext_block = ext4fs_get_extent_block(fs->ext4fs_root, buf,
+		ext_block = ext4fs_get_extent_block(fs, fs->ext4fs_root, buf,
 						    (struct ext4_extent_header*)inode->b.blocks.dir_blocks,
 						    fileblock, log2_blksz);
 		if (!ext_block) {
@@ -422,7 +414,7 @@ static int ext4fs_read_file(struct ext_filesystem *fs, struct ext2fs_node *node,
 		int blockoff = pos % blocksize;
 		int blockend = blocksize;
 		int skipfirst = 0;
-		blknr = read_allocated_block1(node, i);
+		blknr = read_allocated_block1(fs, node, i);
 		if (blknr < 0)
 			return -1;
 
@@ -502,13 +494,12 @@ static int ext4fs_read_file(struct ext_filesystem *fs, struct ext2fs_node *node,
 }
 
 static struct ext4_extent_header *ext4fs_get_extent_block
-	(struct ext2_data *data, char *buf,
+	(struct ext_filesystem *fs, struct ext2_data *data, char *buf,
 		struct ext4_extent_header *ext_block,
 		uint32_t fileblock, int log2_blksz)
 {
 	struct ext4_extent_idx *index;
 	unsigned long long block;
-	struct ext_filesystem *fs = get_fs();
 	int i;
 
 	while (1) {
@@ -539,12 +530,10 @@ static struct ext4_extent_header *ext4fs_get_extent_block
 	}
 }
 
-static int ext4fs_blockgroup
-	(struct ext2_data *data, int group, struct ext2_block_group *blkgrp)
+static int ext4fs_blockgroup(struct ext_filesystem *fs, struct ext2_data *data, int group, struct ext2_block_group *blkgrp)
 {
 	long int blkno;
 	unsigned int blkoff, desc_per_blk;
-	struct ext_filesystem *fs = get_fs();
 
 	desc_per_blk = EXT2_BLOCK_SIZE(data) / sizeof(struct ext2_block_group);
 
@@ -572,7 +561,7 @@ int ext4fs_read_inode(struct ext_filesystem *fs, struct ext2_data *data, int ino
 
 	/* It is easier to calculate if the first inode is 0. */
 	ino--;
-	status = ext4fs_blockgroup(data, ino /
+	status = ext4fs_blockgroup(fs, data, ino /
 				   (sblock->inodes_per_group), &blkgrp);
 	if (status == 0)
 		return 0;
@@ -752,7 +741,7 @@ static char *ext4fs_read_symlink(struct ext_filesystem *fs, struct ext2fs_node *
 	return symlink;
 }
 
-static int ext4fs_find_file1(const char *currpath,
+static int ext4fs_find_file1(struct ext_filesystem *fs, const char *currpath,
 			     struct ext2fs_node *currroot,
 			     struct ext2fs_node **currfound, int *foundtype, int *symlinknest)
 {
@@ -763,7 +752,6 @@ static int ext4fs_find_file1(const char *currpath,
 	int type = FILETYPE_DIRECTORY;
 	struct ext2fs_node *currnode = currroot;
 	struct ext2fs_node *oldnode = currroot;
-	struct ext_filesystem *fs = get_fs();
 
 	strncpy(fpath, currpath, strlen(currpath) + 1);
 
@@ -788,7 +776,7 @@ static int ext4fs_find_file1(const char *currpath,
 		}
 
 		if (type != FILETYPE_DIRECTORY) {
-			ext4fs_free_node(currnode, currroot);
+			ext4fs_free_node(fs, currnode, currroot);
 			return 0;
 		}
 
@@ -809,39 +797,39 @@ static int ext4fs_find_file1(const char *currpath,
 			/* Test if the symlink does not loop. */
 			*symlinknest = *symlinknest + 1;
 			if (*symlinknest == 8) {
-				ext4fs_free_node(currnode, currroot);
-				ext4fs_free_node(oldnode, currroot);
+				ext4fs_free_node(fs, currnode, currroot);
+				ext4fs_free_node(fs, oldnode, currroot);
 				return 0;
 			}
 
 			symlink = ext4fs_read_symlink(fs, currnode);
-			ext4fs_free_node(currnode, currroot);
+			ext4fs_free_node(fs, currnode, currroot);
 
 			if (!symlink) {
-				ext4fs_free_node(oldnode, currroot);
+				ext4fs_free_node(fs, oldnode, currroot);
 				return 0;
 			}
 #ifdef DEBUG
 			printf("Got symlink >%s<\n", symlink);
 #endif
 			if (symlink[0] == '/') {
-				ext4fs_free_node(oldnode, currroot);
+				ext4fs_free_node(fs, oldnode, currroot);
 				oldnode = &fs->ext4fs_root->diropen;
 			}
 
 			/* Lookup the node the symlink points to. */
-			status = ext4fs_find_file1(symlink, oldnode,
+			status = ext4fs_find_file1(fs, symlink, oldnode,
 						    &currnode, &type, symlinknest);
 
 			free(symlink);
 
 			if (status == 0) {
-				ext4fs_free_node(oldnode, currroot);
+				ext4fs_free_node(fs, oldnode, currroot);
 				return 0;
 			}
 		}
 
-		ext4fs_free_node(oldnode, currroot);
+		ext4fs_free_node(fs, oldnode, currroot);
 
 		/* Found the node! */
 		if (!next || *next == '\0') {
@@ -854,7 +842,7 @@ static int ext4fs_find_file1(const char *currpath,
 	return -1;
 }
 
-static int ext4fs_find_file(const char *path, struct ext2fs_node *rootnode,
+static int ext4fs_find_file(struct ext_filesystem *fs, const char *path, struct ext2fs_node *rootnode,
 	struct ext2fs_node **foundnode, int expecttype)
 {
 	int status;
@@ -864,7 +852,7 @@ static int ext4fs_find_file(const char *path, struct ext2fs_node *rootnode,
 	if (!path)
 		return 0;
 
-	status = ext4fs_find_file1(path, rootnode, foundnode, &foundtype, &symlinknest);
+	status = ext4fs_find_file1(fs, path, rootnode, foundnode, &foundtype, &symlinknest);
 	if (status == 0)
 		return 0;
 
@@ -892,7 +880,7 @@ static int ext4fs_file_entry_close(struct file_entry *filp, struct filesys_spec 
 	struct ext2fs_file_entry *file = (struct ext2fs_file_entry *)filp;
 	struct ext_filesystem *fs = &fsys->extfs;
 
-	ext4fs_free_node(file->ext4fs_file, &fs->ext4fs_root->diropen);
+	ext4fs_free_node(fs, file->ext4fs_file, &fs->ext4fs_root->diropen);
 	free(file);
 	return 0;
 }
@@ -900,7 +888,6 @@ static int ext4fs_file_entry_close(struct file_entry *filp, struct filesys_spec 
 static int ext4fs_file_entry_stat(struct file_entry *filp, struct filesys_spec *fsys, struct xstat *st)
 {
 	struct ext2fs_file_entry *file = (struct ext2fs_file_entry *)filp;
-	struct ext_filesystem *fs = &fsys->extfs;
 
 	st->mtime = file->ext4fs_file->inode.mtime;
 	st->atime = file->ext4fs_file->inode.atime;
@@ -929,11 +916,10 @@ ext4fs_open(struct filesys_spec *fsys, const char *filename)
 {
 	struct ext2fs_node *fdiro = NULL;
 	int status;
-	int len;
 	struct ext2fs_file_entry *filp;
 	struct ext_filesystem *fs = &fsys->extfs;
 
-	status = ext4fs_find_file(filename, &fs->ext4fs_root->diropen, &fdiro,
+	status = ext4fs_find_file(fs, filename, &fs->ext4fs_root->diropen, &fdiro,
 				  FILETYPE_REG);
 	if (status == 0)
 		goto fail;
@@ -944,13 +930,13 @@ ext4fs_open(struct filesys_spec *fsys, const char *filename)
 		if (status == 0)
 			goto fail;
 	}
-	len = (fdiro->inode.size);
+
 	filp = __alloc_ext2fs_entry(fdiro);
 
 	return &filp->base;
 fail:
 	if (fdiro)
-		ext4fs_free_node(fdiro, &fs->ext4fs_root->diropen);
+		ext4fs_free_node(fs, fdiro, &fs->ext4fs_root->diropen);
 
 	return NULL;
 }
@@ -1003,11 +989,9 @@ static struct filesys_spec *ext4fs_mount(part_descr_t part)
 	data->diropen.inode_read = 1;
 	data->inode = &data->diropen.inode;
 
-	memcpy(get_fs(), fs, sizeof *fs);
 	status = ext4fs_read_inode(fs, data, 2, data->inode);
 	if (status == 0)
 		goto fail;
-	memcpy(get_fs(), fs, sizeof *fs);
 	return fs_descr;
 fail:
 	printf("Failed to mount ext2 filesystem...\n");
@@ -1025,14 +1009,14 @@ static int ext4fs_list_files(struct filesys_spec *fsys, const char *dirname, dir
 	if (dirname == NULL)
 		return -1;
 
-	status = ext4fs_find_file(dirname, &fs->ext4fs_root->diropen, &dirnode,
+	status = ext4fs_find_file(fs, dirname, &fs->ext4fs_root->diropen, &dirnode,
 			FILETYPE_DIRECTORY);
 	if (status != 1) {
 		printf("** Can not find directory. [%s] **\n", dirname);
 		return -1;
 	}
 	ext4fs_iterate_dir(fs, dirnode, NULL, NULL, NULL, func, data);
-	ext4fs_free_node(dirnode, &fs->ext4fs_root->diropen);
+	ext4fs_free_node(fs, dirnode, &fs->ext4fs_root->diropen);
 
 	return 0;
 }
@@ -1059,10 +1043,7 @@ static int ext4fs_label(struct filesys_spec *fsys, char *buf, int buflen)
 
 static int ext4fs_fsstat(struct filesys_spec *fsys, struct xfsstat *stbuf)
 {
-	struct ext2_sblock *sbp;
 	struct ext_filesystem *fs = &fsys->extfs;
-
-	sbp = &fs->ext4fs_root->sblock;
 
 	stbuf->total_avail = fs->dev_desc->length * SECTOR_SIZE;
 

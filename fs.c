@@ -56,7 +56,7 @@ int vfs_devread(part_descr_t part_info, int sector, int byte_offset, int byte_le
 
 	if (byte_offset != 0) {
 		/* read first part which isn't aligned with start of sector */
-		if (part_read(part_info, sector, 1, sec_buf) < 0 ) {
+		if (part_read(part_info, sector, 1, (uint8_t*)sec_buf) < 0 ) {
 			printf(" ** ext2fs_devread() read error **\n");
 			return 0;
 		}
@@ -82,7 +82,7 @@ int vfs_devread(part_descr_t part_info, int sector, int byte_offset, int byte_le
 		return 1;
 	}
 
-	if (part_read(part_info, sector, block_len / SECTOR_SIZE, buf) < 0) {
+	if (part_read(part_info, sector, block_len / SECTOR_SIZE, (uint8_t*)buf) < 0) {
 		printf(" ** %s read error - block\n", __func__);
 		return 0;
 	}

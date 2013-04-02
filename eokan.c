@@ -110,8 +110,6 @@ static int __CreateDirectory(
 	LPCWSTR					FileName,
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
-	WCHAR filePath[MAX_PATH];
-
 	DbgPrint(L"CreateDirectory : %s\n", FileName);
 	return 0;
 }
@@ -121,7 +119,6 @@ static int __OpenDirectory(
 	PDOKAN_FILE_INFO		DokanFileInfo)
 {
 	char FilePath[MAX_PATH] = {0};
-	DWORD attr;
 
 	DbgPrint(L"OpenDirectory : %s\n", FileName);
 	utf16_to_utf8(FileName, wcslen(FileName), FilePath, sizeof FilePath);
@@ -183,11 +180,6 @@ static int __WriteFile(
 	LONGLONG			Offset,
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
-	WCHAR	filePath[MAX_PATH];
-	HANDLE	handle = (HANDLE)DokanFileInfo->Context;
-	ULONG	offset = (ULONG)Offset;
-	BOOL	opened = FALSE;
-
 	DbgPrint(L"WriteFile : %s, offset %I64d, length %d\n", FileName, Offset, NumberOfBytesToWrite);
 
 	return 0;
@@ -198,27 +190,10 @@ static int __FlushFileBuffers(
 	LPCWSTR		FileName,
 	PDOKAN_FILE_INFO	DokanFileInfo)
 {
-	WCHAR	filePath[MAX_PATH];
-	HANDLE	handle = (HANDLE)DokanFileInfo->Context;
-
 	DbgPrint(L"FlushFileBuffers : %s\n", FileName);
 
 	return 0;
 }
-#if 0
-typedef struct _BY_HANDLE_FILE_INFORMATION {
-  DWORD    dwFileAttributes;
-  FILETIME ftCreationTime;
-  FILETIME ftLastAccessTime;
-  FILETIME ftLastWriteTime;
-  DWORD    dwVolumeSerialNumber;
-  DWORD    nFileSizeHigh;
-  DWORD    nFileSizeLow;
-  DWORD    nNumberOfLinks;
-  DWORD    nFileIndexHigh;
-  DWORD    nFileIndexLow;
-} BY_HANDLE_FILE_INFORMATION, *PBY_HANDLE_FILE_INFORMATION;
-#endif
 
 static int __GetFileInformation(
 	LPCWSTR							FileName,
@@ -302,7 +277,6 @@ static int __FindFiles(LPCWSTR	FileName, PFillFindData	FillFindData /* function 
 static int __DeleteFile( LPCWSTR FileName, PDOKAN_FILE_INFO	DokanFileInfo)
 {
 	char	filePath[MAX_PATH * 2];
-	HANDLE	handle = (HANDLE)DokanFileInfo->Context;
 
 	utf16_to_utf8(FileName, wcslen(FileName), filePath, sizeof filePath);
 

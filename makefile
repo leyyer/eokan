@@ -21,7 +21,7 @@
 CC       := gcc
 WINDRES  := windres
 #DEBUG_FLAGS = -g -ggdb -DDEBUG
-CFLAGS   += -D_UNICODE -DUNICODE -Iinclude $(DEBUG_FLAGS)
+CFLAGS   += -D_UNICODE -DUNICODE -Iinclude $(DEBUG_FLAGS) -Wall -Werror
 EXT4_WRITE_OBJS = ext4_jour.o crc16.o
 OBJS     = disk.o vmdk_disk.o phy_disk.o util.o eokan.o eokan_svc.o ext4.o fs.o resource.o
 all: eokan
